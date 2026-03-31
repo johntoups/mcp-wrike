@@ -25,6 +25,7 @@ class WrikeTask:
     description: str | None
     brief_description: str | None
     parent_ids: list[str] = field(default_factory=list)
+    super_task_ids: list[str] = field(default_factory=list)
     responsible_ids: list[str] = field(default_factory=list)
     permalink: str | None = None
     priority: str | None = None
@@ -56,6 +57,23 @@ class WrikeAttachment:
     author_id: str | None
     task_id: str | None = None
     url: str | None = None
+
+
+@dataclass
+class WrikeProject:
+    """Wrike project data (a folder with project properties)."""
+
+    id: str
+    title: str
+    description: str | None
+    custom_status_id: str | None
+    custom_status_name: str | None
+    owner_ids: list[str] = field(default_factory=list)
+    created_date: datetime | None = None
+    updated_date: datetime | None = None
+    permalink: str | None = None
+    child_ids: list[str] = field(default_factory=list)
+    custom_fields: list[dict] = field(default_factory=list)
 
 
 class WrikeClient:
@@ -189,6 +207,7 @@ class WrikeClient:
             description=t.get("description"),
             brief_description=t.get("briefDescription"),
             parent_ids=t.get("parentIds", []),
+            super_task_ids=t.get("superTaskIds", []),
             responsible_ids=t.get("responsibleIds", []),
             permalink=t.get("permalink"),
             priority=t.get("priority"),
@@ -374,6 +393,8 @@ class WrikeClient:
         completed_date: str | None = None,
         custom_fields: list[dict] | None = None,
         custom_status: str | None = None,
+        add_super_tasks: list[str] | None = None,
+        remove_super_tasks: list[str] | None = None,
     ) -> WrikeTask:
         """Update an existing task.
 
@@ -388,6 +409,8 @@ class WrikeClient:
             importance: High, Normal, or Low
             completed_date: Completion date override (YYYY-MM-DD)
             custom_status: Custom workflow status ID (overrides status)
+            add_super_tasks: Task IDs to add as parent tasks
+            remove_super_tasks: Task IDs to remove as parent tasks
 
         Returns:
             Updated task
@@ -414,6 +437,10 @@ class WrikeClient:
             body["customFields"] = custom_fields
         if custom_status:
             body["customStatus"] = custom_status
+        if add_super_tasks:
+            body["addSuperTasks"] = add_super_tasks
+        if remove_super_tasks:
+            body["removeSuperTasks"] = remove_super_tasks
 
         data = await self._request("PUT", f"/tasks/{task_id}", json_data=body)
         tasks = data.get("data", [])
@@ -545,3 +572,134 @@ class WrikeClient:
 
         data = await self._request("GET", f"/folders/{folder_id}/tasks", params=params)
         return [self._parse_task(t) for t in data.get("data", [])]
+
+    async def create_project(
+        self,
+        parent_folder_id: str,
+        title: str,
+        description: str | None = None,
+        owner_ids: list[str] | None = None,
+        custom_status: str | None = None,
+        custom_fields: list[dict] | None = None,
+    ) -> WrikeProject:
+        """Create a new project (folder with project properties).
+
+        Args:
+            parent_folder_id: Parent folder ID
+            title: Project title
+            description: Project description (HTML allowed)
+            owner_ids: Contact IDs for project owners
+            custom_status: Custom workflow status ID for the project
+            custom_fields: Custom field values as [{id, value}] pairs
+
+        Returns:
+            Created project
+        """
+        project_params: dict[str, Any] = {}
+        if owner_ids:
+            project_params["ownerIds"] = owner_ids
+        if custom_status:
+            project_params["customStatusId"] = custom_status
+
+        body: dict[str, Any] = {
+            "title": title,
+            "project": project_params,
+        }
+
+        if description is not None:
+            body["description"] = description
+        if custom_fields:
+            body["customFields"] = custom_fields
+
+        data = await self._request(
+            "POST", f"/folders/{parent_folder_id}/folders", json_data=body
+        )
+        folders = data.get("data", [])
+        if not folders:
+            raise ValueError("Project creation returned no data")
+        return self._parse_project(folders[0])
+
+    async def update_project(
+        self,
+        project_id: str,
+        title: str | None = None,
+        description: str | None = None,
+        custom_status: str | None = None,
+        custom_fields: list[dict] | None = None,
+    ) -> WrikeProject:
+        """Update an existing project.
+
+        Args:
+            project_id: Wrike project (folder) ID
+            title: New title
+            description: New description (HTML allowed)
+            custom_status: Custom workflow status ID
+            custom_fields: Custom field values as [{id, value}] pairs
+
+        Returns:
+            Updated project
+        """
+        body: dict[str, Any] = {}
+
+        if title is not None:
+            body["title"] = title
+        if description is not None:
+            body["description"] = description
+        if custom_status:
+            body["project"] = {"customStatusId": custom_status}
+        if custom_fields:
+            body["customFields"] = custom_fields
+
+        data = await self._request("PUT", f"/folders/{project_id}", json_data=body)
+        folders = data.get("data", [])
+        if not folders:
+            raise ValueError(f"Project update returned no data for: {project_id}")
+        return self._parse_project(folders[0])
+
+    async def move_task(
+        self,
+        task_id: str,
+        add_parents: list[str] | None = None,
+        remove_parents: list[str] | None = None,
+    ) -> WrikeTask:
+        """Move a task between folders/projects.
+
+        Args:
+            task_id: Wrike task ID
+            add_parents: Folder/project IDs to add the task to
+            remove_parents: Folder/project IDs to remove the task from
+
+        Returns:
+            Updated task
+        """
+        body: dict[str, Any] = {}
+        if add_parents:
+            body["addParents"] = add_parents
+        if remove_parents:
+            body["removeParents"] = remove_parents
+
+        data = await self._request("PUT", f"/tasks/{task_id}", json_data=body)
+        tasks = data.get("data", [])
+        if not tasks:
+            raise ValueError(f"Task move returned no data for: {task_id}")
+        return self._parse_task(tasks[0])
+
+    def _parse_project(self, f: dict) -> WrikeProject:
+        """Parse project from API response."""
+        project_data = f.get("project", {})
+        custom_status_id = project_data.get("customStatusId")
+        custom_status_name = self._status_cache.get(custom_status_id) if custom_status_id else None
+
+        return WrikeProject(
+            id=f["id"],
+            title=f.get("title", "Untitled"),
+            description=f.get("description"),
+            custom_status_id=custom_status_id,
+            custom_status_name=custom_status_name,
+            owner_ids=project_data.get("ownerIds", []),
+            created_date=self._parse_datetime(project_data.get("createdDate")),
+            updated_date=self._parse_datetime(f.get("updatedDate")),
+            permalink=f.get("permalink"),
+            child_ids=f.get("childIds", []),
+            custom_fields=f.get("customFields", []),
+        )

@@ -59,6 +59,9 @@ def _format_task(task, include_description: bool = True) -> str:
     if task.completed_date:
         lines.append(f"- Completed: {task.completed_date.strftime('%Y-%m-%d %H:%M')}")
 
+    if task.super_task_ids:
+        lines.append(f"- Parent tasks: {', '.join(f'`{sid}`' for sid in task.super_task_ids)}")
+
     if task.permalink:
         lines.append(f"- Link: {task.permalink}")
 
@@ -82,6 +85,39 @@ def _format_comment(comment, author_name: str = "") -> str:
     text = text.replace("&nbsp;", " ").strip()
 
     return f"**{author}** ({date_str}):\n{text}"
+
+
+def _format_project(project) -> str:
+    """Format project for display."""
+    status_display = project.custom_status_name or "No status"
+    lines = [
+        f"**{project.title}**",
+        f"- ID: `{project.id}`",
+        f"- Status: {status_display}",
+    ]
+
+    if project.owner_ids:
+        lines.append(f"- Owners: {', '.join(f'`{oid}`' for oid in project.owner_ids)}")
+
+    if project.created_date:
+        lines.append(f"- Created: {project.created_date.strftime('%Y-%m-%d %H:%M')}")
+
+    if project.updated_date:
+        lines.append(f"- Updated: {project.updated_date.strftime('%Y-%m-%d %H:%M')}")
+
+    if project.child_ids:
+        lines.append(f"- Child folders: {len(project.child_ids)}")
+
+    if project.permalink:
+        lines.append(f"- Link: {project.permalink}")
+
+    if project.description:
+        clean_desc = re.sub(r"<[^>]+>", "", project.description)
+        clean_desc = clean_desc.replace("&nbsp;", " ").strip()
+        if clean_desc:
+            lines.append(f"\n**Description:**\n{clean_desc}")
+
+    return "\n".join(lines)
 
 
 def _format_attachment(attachment) -> str:
@@ -337,6 +373,16 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Custom workflow status ID (overrides generic status)",
                     },
+                    "add_super_tasks": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Task IDs to add as parent tasks (makes this task a subtask)",
+                    },
+                    "remove_super_tasks": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Task IDs to remove as parent tasks",
+                    },
                 },
                 "required": ["task_id"],
             },
@@ -458,6 +504,111 @@ async def list_tools() -> list[Tool]:
                     "task_id": {
                         "type": "string",
                         "description": "The Wrike task ID to complete",
+                    },
+                },
+                "required": ["task_id"],
+            },
+        ),
+        Tool(
+            name="create_project",
+            description="Create a Wrike project (folder with project properties) inside a parent folder",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "parent_folder_id": {
+                        "type": "string",
+                        "description": "The parent folder ID to create the project in",
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Project title",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Project description (HTML allowed)",
+                    },
+                    "owner_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Contact IDs for project owners",
+                    },
+                    "custom_status": {
+                        "type": "string",
+                        "description": "Custom workflow status ID for the project",
+                    },
+                    "custom_fields": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "value": {"type": "string"},
+                            },
+                            "required": ["id", "value"],
+                        },
+                        "description": "Custom field values as [{id, value}] pairs",
+                    },
+                },
+                "required": ["parent_folder_id", "title"],
+            },
+        ),
+        Tool(
+            name="update_project",
+            description="Update an existing Wrike project",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_id": {
+                        "type": "string",
+                        "description": "The Wrike project (folder) ID to update",
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "New project title",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "New project description (HTML allowed)",
+                    },
+                    "custom_status": {
+                        "type": "string",
+                        "description": "Custom workflow status ID",
+                    },
+                    "custom_fields": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "value": {"type": "string"},
+                            },
+                            "required": ["id", "value"],
+                        },
+                        "description": "Custom field values as [{id, value}] pairs",
+                    },
+                },
+                "required": ["project_id"],
+            },
+        ),
+        Tool(
+            name="move_task",
+            description="Move a task between folders/projects by adding or removing parent folders",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "The Wrike task ID to move",
+                    },
+                    "add_parents": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Folder/project IDs to add the task to",
+                    },
+                    "remove_parents": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Folder/project IDs to remove the task from",
                     },
                 },
                 "required": ["task_id"],
@@ -651,6 +802,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     completed_date=arguments.get("completed_date"),
                     custom_fields=arguments.get("custom_fields"),
                     custom_status=arguments.get("custom_status"),
+                    add_super_tasks=arguments.get("add_super_tasks"),
+                    remove_super_tasks=arguments.get("remove_super_tasks"),
                 )
 
                 output = ["**Task updated successfully:**\n", _format_task(task)]
@@ -784,6 +937,48 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 task_id = arguments["task_id"]
                 task = await client.update_task(task_id=task_id, status="Completed")
                 output = ["**Task marked as completed:**\n", _format_task(task)]
+                return [TextContent(type="text", text="\n".join(output))]
+
+            elif name == "create_project":
+                parent_folder_id = arguments["parent_folder_id"]
+                title = arguments["title"]
+
+                project = await client.create_project(
+                    parent_folder_id=parent_folder_id,
+                    title=title,
+                    description=arguments.get("description"),
+                    owner_ids=arguments.get("owner_ids"),
+                    custom_status=arguments.get("custom_status"),
+                    custom_fields=arguments.get("custom_fields"),
+                )
+
+                output = ["**Project created successfully:**\n", _format_project(project)]
+                return [TextContent(type="text", text="\n".join(output))]
+
+            elif name == "update_project":
+                project_id = arguments["project_id"]
+
+                project = await client.update_project(
+                    project_id=project_id,
+                    title=arguments.get("title"),
+                    description=arguments.get("description"),
+                    custom_status=arguments.get("custom_status"),
+                    custom_fields=arguments.get("custom_fields"),
+                )
+
+                output = ["**Project updated successfully:**\n", _format_project(project)]
+                return [TextContent(type="text", text="\n".join(output))]
+
+            elif name == "move_task":
+                task_id = arguments["task_id"]
+
+                task = await client.move_task(
+                    task_id=task_id,
+                    add_parents=arguments.get("add_parents"),
+                    remove_parents=arguments.get("remove_parents"),
+                )
+
+                output = ["**Task moved successfully:**\n", _format_task(task, include_description=False)]
                 return [TextContent(type="text", text="\n".join(output))]
 
             else:
