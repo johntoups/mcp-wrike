@@ -341,6 +341,7 @@ class WrikeClient:
         importance: str | None = None,
         custom_fields: list[dict] | None = None,
         custom_status: str | None = None,
+        custom_item_type_id: str | None = None,
     ) -> WrikeTask:
         """Create a new task in a folder.
 
@@ -353,6 +354,7 @@ class WrikeClient:
             dates: Dict with optional 'start' and 'due' keys (YYYY-MM-DD)
             importance: High, Normal, or Low
             custom_status: Custom workflow status ID (overrides status)
+            custom_item_type_id: Custom item type ID
 
         Returns:
             Created task
@@ -373,6 +375,8 @@ class WrikeClient:
             body["customFields"] = custom_fields
         if custom_status:
             body["customStatus"] = custom_status
+        if custom_item_type_id:
+            body["customItemTypeId"] = custom_item_type_id
 
         data = await self._request("POST", f"/folders/{folder_id}/tasks", json_data=body)
         tasks = data.get("data", [])
@@ -395,6 +399,7 @@ class WrikeClient:
         custom_status: str | None = None,
         add_super_tasks: list[str] | None = None,
         remove_super_tasks: list[str] | None = None,
+        custom_item_type_id: str | None = None,
     ) -> WrikeTask:
         """Update an existing task.
 
@@ -411,6 +416,7 @@ class WrikeClient:
             custom_status: Custom workflow status ID (overrides status)
             add_super_tasks: Task IDs to add as parent tasks
             remove_super_tasks: Task IDs to remove as parent tasks
+            custom_item_type_id: Custom item type ID
 
         Returns:
             Updated task
@@ -441,6 +447,8 @@ class WrikeClient:
             body["addSuperTasks"] = add_super_tasks
         if remove_super_tasks:
             body["removeSuperTasks"] = remove_super_tasks
+        if custom_item_type_id:
+            body["customItemTypeId"] = custom_item_type_id
 
         data = await self._request("PUT", f"/tasks/{task_id}", json_data=body)
         tasks = data.get("data", [])
@@ -540,6 +548,15 @@ class WrikeClient:
                 self._status_cache[status["id"]] = status.get("name", "Unknown")
 
         return workflows
+
+    async def get_custom_item_types(self) -> list[dict]:
+        """Get all custom item type definitions.
+
+        Returns:
+            List of custom item type dicts with id, title, type, etc.
+        """
+        data = await self._request("GET", "/customitemtypes")
+        return data.get("data", [])
 
     async def get_custom_fields(self) -> list[dict]:
         """Get all custom field definitions.

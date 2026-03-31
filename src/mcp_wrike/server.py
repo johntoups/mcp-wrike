@@ -303,6 +303,10 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Custom workflow status ID (overrides generic status)",
                     },
+                    "custom_item_type_id": {
+                        "type": "string",
+                        "description": "Custom item type ID (e.g., Engineering Project, Spike, Bug Report)",
+                    },
                 },
                 "required": ["folder_id", "title"],
             },
@@ -383,6 +387,10 @@ async def list_tools() -> list[Tool]:
                         "items": {"type": "string"},
                         "description": "Task IDs to remove as parent tasks",
                     },
+                    "custom_item_type_id": {
+                        "type": "string",
+                        "description": "Custom item type ID (e.g., Engineering Project, Spike, Bug Report)",
+                    },
                 },
                 "required": ["task_id"],
             },
@@ -456,6 +464,19 @@ async def list_tools() -> list[Tool]:
                     "workflow_name": {
                         "type": "string",
                         "description": "Filter by workflow name (partial match, case-insensitive)",
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="get_custom_item_types",
+            description="List all Wrike custom item types (Engineering Project, Spike, Bug Report, etc.)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "search": {
+                        "type": "string",
+                        "description": "Filter by type name (partial match, case-insensitive)",
                     },
                 },
             },
@@ -772,6 +793,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     importance=arguments.get("importance"),
                     custom_fields=arguments.get("custom_fields"),
                     custom_status=arguments.get("custom_status"),
+                    custom_item_type_id=arguments.get("custom_item_type_id"),
                 )
 
                 output = ["**Task created successfully:**\n", _format_task(task)]
@@ -804,6 +826,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     custom_status=arguments.get("custom_status"),
                     add_super_tasks=arguments.get("add_super_tasks"),
                     remove_super_tasks=arguments.get("remove_super_tasks"),
+                    custom_item_type_id=arguments.get("custom_item_type_id"),
                 )
 
                 output = ["**Task updated successfully:**\n", _format_task(task)]
@@ -885,6 +908,26 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
                 if not output:
                     return [TextContent(type="text", text="No workflows found.")]
+                return [TextContent(type="text", text="\n".join(output))]
+
+            elif name == "get_custom_item_types":
+                search = arguments.get("search", "").lower()
+                item_types = await client.get_custom_item_types()
+
+                output = []
+                for it in item_types:
+                    title = it.get("title", "Untitled")
+                    if search and search not in title.lower():
+                        continue
+                    it_type = it.get("type", "Unknown")
+                    space = it.get("spaceId", "")
+                    output.append(
+                        f"- **{title}** | type: {it_type} | "
+                        f"id: `{it.get('id')}` | space: `{space}`"
+                    )
+
+                if not output:
+                    return [TextContent(type="text", text="No custom item types found.")]
                 return [TextContent(type="text", text="\n".join(output))]
 
             elif name == "get_custom_fields":
