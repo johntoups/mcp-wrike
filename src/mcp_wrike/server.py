@@ -919,11 +919,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     title = it.get("title", "Untitled")
                     if search and search not in title.lower():
                         continue
-                    it_type = it.get("type", "Unknown")
+                    related_type = it.get("relatedType", "Unknown")
                     space = it.get("spaceId", "")
+                    desc = it.get("description", "")
+                    desc_str = f" — {desc}" if desc else ""
                     output.append(
-                        f"- **{title}** | type: {it_type} | "
-                        f"id: `{it.get('id')}` | space: `{space}`"
+                        f"- **{title}** | {related_type} | "
+                        f"id: `{it.get('id')}` | space: `{space}`{desc_str}"
                     )
 
                 if not output:
