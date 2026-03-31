@@ -126,7 +126,9 @@ class WrikeClient:
             ValueError: On API errors
         """
         if not self._client:
-            raise RuntimeError("Client not initialized. Use 'async with' context manager.")
+            raise RuntimeError(
+                "Client not initialized. Use 'async with' context manager."
+            )
 
         url = f"{BASE_URL}{endpoint}"
         response = await self._client.request(
@@ -192,7 +194,9 @@ class WrikeClient:
         """Parse task from API response."""
         # Resolve custom status name from cached workflows
         custom_status_id = t.get("customStatusId")
-        custom_status_name = self._status_cache.get(custom_status_id) if custom_status_id else None
+        custom_status_name = (
+            self._status_cache.get(custom_status_id) if custom_status_id else None
+        )
 
         return WrikeTask(
             id=t["id"],
@@ -234,7 +238,9 @@ class WrikeClient:
 
         return self._parse_task(tasks[0])
 
-    async def get_task_comments(self, task_id: str, limit: int = 100) -> list[WrikeComment]:
+    async def get_task_comments(
+        self, task_id: str, limit: int = 100
+    ) -> list[WrikeComment]:
         """Get comments for a task.
 
         Args:
@@ -260,7 +266,9 @@ class WrikeClient:
 
         return comments
 
-    async def get_task_attachments(self, task_id: str, limit: int = 100) -> list[WrikeAttachment]:
+    async def get_task_attachments(
+        self, task_id: str, limit: int = 100
+    ) -> list[WrikeAttachment]:
         """Get attachments for a task.
 
         Args:
@@ -378,7 +386,9 @@ class WrikeClient:
         if custom_item_type_id:
             body["customItemTypeId"] = custom_item_type_id
 
-        data = await self._request("POST", f"/folders/{folder_id}/tasks", json_data=body)
+        data = await self._request(
+            "POST", f"/folders/{folder_id}/tasks", json_data=body
+        )
         tasks = data.get("data", [])
         if not tasks:
             raise ValueError("Task creation returned no data")
@@ -488,7 +498,9 @@ class WrikeClient:
         if description is not None:
             body["description"] = description
 
-        data = await self._request("POST", f"/folders/{parent_folder_id}/folders", json_data=body)
+        data = await self._request(
+            "POST", f"/folders/{parent_folder_id}/folders", json_data=body
+        )
         folders = data.get("data", [])
         if not folders:
             raise ValueError("Folder creation returned no data")
@@ -511,7 +523,9 @@ class WrikeClient:
             Attachment metadata
         """
         if not self._client:
-            raise RuntimeError("Client not initialized. Use 'async with' context manager.")
+            raise RuntimeError(
+                "Client not initialized. Use 'async with' context manager."
+            )
 
         with open(file_path, "rb") as f:
             content = f.read()
@@ -705,7 +719,9 @@ class WrikeClient:
         """Parse project from API response."""
         project_data = f.get("project", {})
         custom_status_id = project_data.get("customStatusId")
-        custom_status_name = self._status_cache.get(custom_status_id) if custom_status_id else None
+        custom_status_name = (
+            self._status_cache.get(custom_status_id) if custom_status_id else None
+        )
 
         return WrikeProject(
             id=f["id"],

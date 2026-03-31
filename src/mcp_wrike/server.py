@@ -60,7 +60,9 @@ def _format_task(task, include_description: bool = True) -> str:
         lines.append(f"- Completed: {task.completed_date.strftime('%Y-%m-%d %H:%M')}")
 
     if task.super_task_ids:
-        lines.append(f"- Parent tasks: {', '.join(f'`{sid}`' for sid in task.super_task_ids)}")
+        lines.append(
+            f"- Parent tasks: {', '.join(f'`{sid}`' for sid in task.super_task_ids)}"
+        )
 
     if task.permalink:
         lines.append(f"- Link: {task.permalink}")
@@ -77,7 +79,11 @@ def _format_task(task, include_description: bool = True) -> str:
 
 def _format_comment(comment, author_name: str = "") -> str:
     """Format comment for display."""
-    date_str = comment.created_date.strftime("%Y-%m-%d %H:%M") if comment.created_date else "Unknown"
+    date_str = (
+        comment.created_date.strftime("%Y-%m-%d %H:%M")
+        if comment.created_date
+        else "Unknown"
+    )
     author = author_name or comment.author_id
 
     # Strip HTML tags
@@ -122,7 +128,11 @@ def _format_project(project) -> str:
 
 def _format_attachment(attachment) -> str:
     """Format attachment for display."""
-    date_str = attachment.created_date.strftime("%Y-%m-%d") if attachment.created_date else "Unknown"
+    date_str = (
+        attachment.created_date.strftime("%Y-%m-%d")
+        if attachment.created_date
+        else "Unknown"
+    )
     size_str = f"{attachment.size:,} bytes" if attachment.size else "Unknown size"
 
     lines = [
@@ -155,7 +165,10 @@ async def list_tools() -> list[Tool]:
                     },
                     "status": {
                         "type": "string",
-                        "description": "Filter by status: Active, Completed, Deferred, Cancelled",
+                        "description": (
+                            "Filter by status: Active, Completed,"
+                            " Deferred, Cancelled"
+                        ),
                         "enum": ["Active", "Completed", "Deferred", "Cancelled"],
                     },
                     "limit": {
@@ -220,7 +233,10 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="get_task_full",
-            description="Get complete task details including description, comments, and attachments",
+            description=(
+                "Get complete task details including description,"
+                " comments, and attachments"
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -301,11 +317,16 @@ async def list_tools() -> list[Tool]:
                     },
                     "custom_status": {
                         "type": "string",
-                        "description": "Custom workflow status ID (overrides generic status)",
+                        "description": (
+                            "Custom workflow status ID" " (overrides generic status)"
+                        ),
                     },
                     "custom_item_type_id": {
                         "type": "string",
-                        "description": "Custom item type ID (e.g., Engineering Project, Spike, Bug Report)",
+                        "description": (
+                            "Custom item type ID (e.g., Engineering"
+                            " Project, Spike, Bug Report)"
+                        ),
                     },
                 },
                 "required": ["folder_id", "title"],
@@ -375,12 +396,17 @@ async def list_tools() -> list[Tool]:
                     },
                     "custom_status": {
                         "type": "string",
-                        "description": "Custom workflow status ID (overrides generic status)",
+                        "description": (
+                            "Custom workflow status ID" " (overrides generic status)"
+                        ),
                     },
                     "add_super_tasks": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Task IDs to add as parent tasks (makes this task a subtask)",
+                        "description": (
+                            "Task IDs to add as parent tasks"
+                            " (makes this task a subtask)"
+                        ),
                     },
                     "remove_super_tasks": {
                         "type": "array",
@@ -389,7 +415,10 @@ async def list_tools() -> list[Tool]:
                     },
                     "custom_item_type_id": {
                         "type": "string",
-                        "description": "Custom item type ID (e.g., Engineering Project, Spike, Bug Report)",
+                        "description": (
+                            "Custom item type ID (e.g., Engineering"
+                            " Project, Spike, Bug Report)"
+                        ),
                     },
                 },
                 "required": ["task_id"],
@@ -463,33 +492,46 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "workflow_name": {
                         "type": "string",
-                        "description": "Filter by workflow name (partial match, case-insensitive)",
+                        "description": (
+                            "Filter by workflow name"
+                            " (partial match, case-insensitive)"
+                        ),
                     },
                 },
             },
         ),
         Tool(
             name="get_custom_item_types",
-            description="List all Wrike custom item types (Engineering Project, Spike, Bug Report, etc.)",
+            description=(
+                "List all Wrike custom item types"
+                " (Engineering Project, Spike, Bug Report, etc.)"
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "search": {
                         "type": "string",
-                        "description": "Filter by type name (partial match, case-insensitive)",
+                        "description": (
+                            "Filter by type name" " (partial match, case-insensitive)"
+                        ),
                     },
                 },
             },
         ),
         Tool(
             name="get_custom_fields",
-            description="List all Wrike custom field definitions (IDs, types, allowed values)",
+            description=(
+                "List all Wrike custom field definitions"
+                " (IDs, types, allowed values)"
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "search": {
                         "type": "string",
-                        "description": "Filter by field name (partial match, case-insensitive)",
+                        "description": (
+                            "Filter by field name" " (partial match, case-insensitive)"
+                        ),
                     },
                 },
             },
@@ -510,7 +552,10 @@ async def list_tools() -> list[Tool]:
                     },
                     "file_name": {
                         "type": "string",
-                        "description": "Display name for the attachment (defaults to filename from path)",
+                        "description": (
+                            "Display name for the attachment"
+                            " (defaults to filename from path)"
+                        ),
                     },
                 },
                 "required": ["task_id", "file_path"],
@@ -532,7 +577,10 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="create_project",
-            description="Create a Wrike project (folder with project properties) inside a parent folder",
+            description=(
+                "Create a Wrike project (folder with project"
+                " properties) inside a parent folder"
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -613,7 +661,10 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="move_task",
-            description="Move a task between folders/projects by adding or removing parent folders",
+            description=(
+                "Move a task between folders/projects by adding"
+                " or removing parent folders"
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -648,8 +699,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 type="text",
                 text="Error: Wrike access token not configured.\n\n"
                 "To configure, run: `wrike-auth store`\n"
-                "Or set environment variable: `export WRIKE_ACCESS_TOKEN=your_token`\n\n"
-                "Get your token from: https://www.wrike.com/frontend/apps/index.html#/api",
+                "Or set environment variable:"
+                " `export WRIKE_ACCESS_TOKEN=your_token`\n\n"
+                "Get your token from:"
+                " https://www.wrike.com/frontend/apps/index.html#/api",
             )
         ]
 
@@ -671,7 +724,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     if status:
                         search_desc.append(f"status='{status}'")
                     search_str = ", ".join(search_desc) if search_desc else "no filters"
-                    return [TextContent(type="text", text=f"No tasks found ({search_str}).")]
+                    return [
+                        TextContent(type="text", text=f"No tasks found ({search_str}).")
+                    ]
 
                 output = [f"Found {len(tasks)} tasks:\n"]
                 for task in tasks:
@@ -692,7 +747,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 comments = await client.get_task_comments(task_id, limit=limit)
 
                 if not comments:
-                    return [TextContent(type="text", text="No comments found for this task.")]
+                    return [
+                        TextContent(
+                            type="text", text="No comments found for this task."
+                        )
+                    ]
 
                 # Get author names
                 output = [f"**{len(comments)} Comments:**\n"]
@@ -710,7 +769,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 attachments = await client.get_task_attachments(task_id, limit=limit)
 
                 if not attachments:
-                    return [TextContent(type="text", text="No attachments found for this task.")]
+                    return [
+                        TextContent(
+                            type="text", text="No attachments found for this task."
+                        )
+                    ]
 
                 output = [f"**{len(attachments)} Attachments:**\n"]
                 for attachment in attachments:
@@ -835,7 +898,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             elif name == "delete_task":
                 task_id = arguments["task_id"]
                 await client.delete_task(task_id)
-                return [TextContent(type="text", text=f"Task `{task_id}` deleted successfully.")]
+                return [
+                    TextContent(
+                        type="text", text=f"Task `{task_id}` deleted successfully."
+                    )
+                ]
 
             elif name == "create_folder":
                 parent_folder_id = arguments["parent_folder_id"]
@@ -874,7 +941,15 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
                 if not tasks:
                     filter_desc = f" with status='{status}'" if status else ""
-                    return [TextContent(type="text", text=f"No tasks found in folder `{folder_id}`{filter_desc}.")]
+                    return [
+                        TextContent(
+                            type="text",
+                            text=(
+                                f"No tasks found in folder"
+                                f" `{folder_id}`{filter_desc}."
+                            ),
+                        )
+                    ]
 
                 output = [f"Found {len(tasks)} tasks in folder `{folder_id}`:\n"]
                 for task in tasks:
@@ -929,7 +1004,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     )
 
                 if not output:
-                    return [TextContent(type="text", text="No custom item types found.")]
+                    return [
+                        TextContent(type="text", text="No custom item types found.")
+                    ]
                 return [TextContent(type="text", text="\n".join(output))]
 
             elif name == "get_custom_fields":
@@ -970,13 +1047,15 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 att_name = attachment.get("name", file_name)
                 att_size = attachment.get("size", 0)
 
-                return [TextContent(
-                    type="text",
-                    text=f"**File attached successfully:**\n"
-                         f"- Name: {att_name}\n"
-                         f"- ID: `{att_id}`\n"
-                         f"- Size: {att_size:,} bytes",
-                )]
+                return [
+                    TextContent(
+                        type="text",
+                        text=f"**File attached successfully:**\n"
+                        f"- Name: {att_name}\n"
+                        f"- ID: `{att_id}`\n"
+                        f"- Size: {att_size:,} bytes",
+                    )
+                ]
 
             elif name == "complete_task":
                 task_id = arguments["task_id"]
@@ -997,7 +1076,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     custom_fields=arguments.get("custom_fields"),
                 )
 
-                output = ["**Project created successfully:**\n", _format_project(project)]
+                output = [
+                    "**Project created successfully:**\n",
+                    _format_project(project),
+                ]
                 return [TextContent(type="text", text="\n".join(output))]
 
             elif name == "update_project":
@@ -1011,7 +1093,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     custom_fields=arguments.get("custom_fields"),
                 )
 
-                output = ["**Project updated successfully:**\n", _format_project(project)]
+                output = [
+                    "**Project updated successfully:**\n",
+                    _format_project(project),
+                ]
                 return [TextContent(type="text", text="\n".join(output))]
 
             elif name == "move_task":
@@ -1023,7 +1108,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     remove_parents=arguments.get("remove_parents"),
                 )
 
-                output = ["**Task moved successfully:**\n", _format_task(task, include_description=False)]
+                output = [
+                    "**Task moved successfully:**\n",
+                    _format_task(task, include_description=False),
+                ]
                 return [TextContent(type="text", text="\n".join(output))]
 
             else:
@@ -1035,9 +1123,12 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
 def main():
     """Run the MCP server."""
+
     async def run():
         async with stdio_server() as (read_stream, write_stream):
-            await server.run(read_stream, write_stream, server.create_initialization_options())
+            await server.run(
+                read_stream, write_stream, server.create_initialization_options()
+            )
 
     asyncio.run(run())
 
