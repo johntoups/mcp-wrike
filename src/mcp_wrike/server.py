@@ -34,10 +34,11 @@ async def _get_user_name(client: WrikeClient, user_id: str) -> str:
 
 def _format_task(task, include_description: bool = True) -> str:
     """Format task for display."""
+    status_display = task.custom_status_name or task.status
     lines = [
         f"**{task.title}**",
         f"- ID: `{task.id}`",
-        f"- Status: {task.status}",
+        f"- Status: {status_display}",
     ]
 
     if task.importance:
@@ -262,6 +263,10 @@ async def list_tools() -> list[Tool]:
                         },
                         "description": "Custom field values as [{id, value}] pairs",
                     },
+                    "custom_status": {
+                        "type": "string",
+                        "description": "Custom workflow status ID (overrides generic status)",
+                    },
                 },
                 "required": ["folder_id", "title"],
             },
@@ -328,6 +333,10 @@ async def list_tools() -> list[Tool]:
                         },
                         "description": "Custom field values as [{id, value}] pairs",
                     },
+                    "custom_status": {
+                        "type": "string",
+                        "description": "Custom workflow status ID (overrides generic status)",
+                    },
                 },
                 "required": ["task_id"],
             },
@@ -390,6 +399,32 @@ async def list_tools() -> list[Tool]:
                     },
                 },
                 "required": ["folder_id"],
+            },
+        ),
+        Tool(
+            name="get_workflows",
+            description="List all Wrike workflows and their custom statuses",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "workflow_name": {
+                        "type": "string",
+                        "description": "Filter by workflow name (partial match, case-insensitive)",
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="get_custom_fields",
+            description="List all Wrike custom field definitions (IDs, types, allowed values)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "search": {
+                        "type": "string",
+                        "description": "Filter by field name (partial match, case-insensitive)",
+                    },
+                },
             },
         ),
         Tool(
@@ -585,6 +620,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     dates=dates,
                     importance=arguments.get("importance"),
                     custom_fields=arguments.get("custom_fields"),
+                    custom_status=arguments.get("custom_status"),
                 )
 
                 output = ["**Task created successfully:**\n", _format_task(task)]
@@ -614,6 +650,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     importance=arguments.get("importance"),
                     completed_date=arguments.get("completed_date"),
                     custom_fields=arguments.get("custom_fields"),
+                    custom_status=arguments.get("custom_status"),
                 )
 
                 output = ["**Task updated successfully:**\n", _format_task(task)]
@@ -668,6 +705,56 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     output.append(_format_task(task, include_description=False))
                     output.append("")
 
+                return [TextContent(type="text", text="\n".join(output))]
+
+            elif name == "get_workflows":
+                workflow_name = arguments.get("workflow_name", "").lower()
+                workflows = await client.get_workflows()
+
+                output = []
+                for wf in workflows:
+                    if wf.get("hidden", False):
+                        continue
+                    name_str = wf.get("name", "Untitled")
+                    if workflow_name and workflow_name not in name_str.lower():
+                        continue
+
+                    output.append(f"**{name_str}** (ID: `{wf.get('id')}`)")
+                    for status in wf.get("customStatuses", []):
+                        if status.get("hidden", False):
+                            continue
+                        output.append(
+                            f"  - {status.get('name')} | "
+                            f"group: {status.get('group')} | "
+                            f"id: `{status.get('id')}`"
+                        )
+                    output.append("")
+
+                if not output:
+                    return [TextContent(type="text", text="No workflows found.")]
+                return [TextContent(type="text", text="\n".join(output))]
+
+            elif name == "get_custom_fields":
+                search = arguments.get("search", "").lower()
+                fields = await client.get_custom_fields()
+
+                output = []
+                for f in fields:
+                    title = f.get("title", "Untitled")
+                    if search and search not in title.lower():
+                        continue
+
+                    settings = f.get("settings", {})
+                    values = settings.get("values", [])
+                    field_type = f.get("type", "Unknown")
+
+                    line = f"**{title}** | type: {field_type} | id: `{f.get('id')}`"
+                    output.append(line)
+                    if values:
+                        output.append(f"  Values: {', '.join(str(v) for v in values)}")
+
+                if not output:
+                    return [TextContent(type="text", text="No custom fields found.")]
                 return [TextContent(type="text", text="\n".join(output))]
 
             elif name == "attach_file":

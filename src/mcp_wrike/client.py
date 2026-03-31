@@ -29,6 +29,8 @@ class WrikeTask:
     permalink: str | None = None
     priority: str | None = None
     custom_fields: list[dict] = field(default_factory=list)
+    custom_status_id: str | None = None
+    custom_status_name: str | None = None
 
 
 @dataclass
@@ -67,6 +69,7 @@ class WrikeClient:
         """
         self.access_token = access_token
         self._client: httpx.AsyncClient | None = None
+        self._status_cache: dict[str, str] = {}  # status_id -> name
 
     async def __aenter__(self):
         self._client = httpx.AsyncClient(
@@ -169,6 +172,10 @@ class WrikeClient:
 
     def _parse_task(self, t: dict) -> WrikeTask:
         """Parse task from API response."""
+        # Resolve custom status name from cached workflows
+        custom_status_id = t.get("customStatusId")
+        custom_status_name = self._status_cache.get(custom_status_id) if custom_status_id else None
+
         return WrikeTask(
             id=t["id"],
             title=t.get("title", "Untitled"),
@@ -186,6 +193,8 @@ class WrikeClient:
             permalink=t.get("permalink"),
             priority=t.get("priority"),
             custom_fields=t.get("customFields", []),
+            custom_status_id=custom_status_id,
+            custom_status_name=custom_status_name,
         )
 
     async def get_task(self, task_id: str) -> WrikeTask:
@@ -312,6 +321,7 @@ class WrikeClient:
         dates: dict | None = None,
         importance: str | None = None,
         custom_fields: list[dict] | None = None,
+        custom_status: str | None = None,
     ) -> WrikeTask:
         """Create a new task in a folder.
 
@@ -323,6 +333,7 @@ class WrikeClient:
             responsible_ids: List of contact IDs to assign
             dates: Dict with optional 'start' and 'due' keys (YYYY-MM-DD)
             importance: High, Normal, or Low
+            custom_status: Custom workflow status ID (overrides status)
 
         Returns:
             Created task
@@ -341,6 +352,8 @@ class WrikeClient:
             body["importance"] = importance
         if custom_fields:
             body["customFields"] = custom_fields
+        if custom_status:
+            body["customStatus"] = custom_status
 
         data = await self._request("POST", f"/folders/{folder_id}/tasks", json_data=body)
         tasks = data.get("data", [])
@@ -360,6 +373,7 @@ class WrikeClient:
         importance: str | None = None,
         completed_date: str | None = None,
         custom_fields: list[dict] | None = None,
+        custom_status: str | None = None,
     ) -> WrikeTask:
         """Update an existing task.
 
@@ -373,6 +387,7 @@ class WrikeClient:
             dates: Dict with optional 'start' and 'due' keys (YYYY-MM-DD)
             importance: High, Normal, or Low
             completed_date: Completion date override (YYYY-MM-DD)
+            custom_status: Custom workflow status ID (overrides status)
 
         Returns:
             Updated task
@@ -397,6 +412,8 @@ class WrikeClient:
             body["completedDate"] = completed_date
         if custom_fields:
             body["customFields"] = custom_fields
+        if custom_status:
+            body["customStatus"] = custom_status
 
         data = await self._request("PUT", f"/tasks/{task_id}", json_data=body)
         tasks = data.get("data", [])
@@ -480,6 +497,31 @@ class WrikeClient:
         if not attachments:
             raise ValueError("Attachment upload returned no data")
         return attachments[0]
+
+    async def get_workflows(self) -> list[dict]:
+        """Get all workflows and their custom statuses.
+
+        Returns:
+            List of workflow dicts with id, name, customStatuses
+        """
+        data = await self._request("GET", "/workflows")
+        workflows = data.get("data", [])
+
+        # Populate status cache
+        for wf in workflows:
+            for status in wf.get("customStatuses", []):
+                self._status_cache[status["id"]] = status.get("name", "Unknown")
+
+        return workflows
+
+    async def get_custom_fields(self) -> list[dict]:
+        """Get all custom field definitions.
+
+        Returns:
+            List of custom field dicts with id, title, type, settings
+        """
+        data = await self._request("GET", "/customfields")
+        return data.get("data", [])
 
     async def get_folder_tasks(
         self,
