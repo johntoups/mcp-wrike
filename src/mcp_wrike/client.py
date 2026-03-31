@@ -555,7 +555,7 @@ class WrikeClient:
         Returns:
             List of custom item type dicts with id, title, type, etc.
         """
-        data = await self._request("GET", "/customitemtypes")
+        data = await self._request("GET", "/custom_item_types")
         return data.get("data", [])
 
     async def get_custom_fields(self) -> list[dict]:
