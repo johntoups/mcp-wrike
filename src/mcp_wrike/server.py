@@ -250,10 +250,14 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="list_folders",
-            description="List Wrike folders/projects",
+            description="List Wrike folders/projects. Use parent_folder_id to list children of a specific folder (e.g., projects under ACv2 Pipeline).",
             inputSchema={
                 "type": "object",
                 "properties": {
+                    "parent_folder_id": {
+                        "type": "string",
+                        "description": "Parent folder ID to list children of. Without this, lists top-level folders.",
+                    },
                     "limit": {
                         "type": "integer",
                         "description": "Maximum folders to return (default: 50)",
@@ -814,20 +818,36 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
             elif name == "list_folders":
                 limit = arguments.get("limit", 50)
-                folders = await client.get_folders()
+                parent_folder_id = arguments.get("parent_folder_id")
+                folders = await client.get_folders(parent_folder_id=parent_folder_id)
 
                 if not folders:
-                    return [TextContent(type="text", text="No folders found.")]
+                    ctx = f" under `{parent_folder_id}`" if parent_folder_id else ""
+                    return [TextContent(type="text", text=f"No folders found{ctx}.")]
 
                 output = [f"Found {len(folders[:limit])} folders:\n"]
                 for f in folders[:limit]:
                     title = f.get("title", "Untitled")
                     folder_id = f.get("id", "Unknown")
                     scope = f.get("scope", "")
-                    output.append(f"- **{title}**")
+                    project = f.get("project", {})
+                    is_project = bool(project)
+
+                    type_label = "Project" if is_project else "Folder"
+                    output.append(f"- **{title}** ({type_label})")
                     output.append(f"  - ID: `{folder_id}`")
                     if scope:
                         output.append(f"  - Scope: {scope}")
+                    if is_project:
+                        owner_ids = project.get("ownerIds", [])
+                        if owner_ids:
+                            output.append(f"  - Owners: {', '.join(f'`{o}`' for o in owner_ids)}")
+                        status_id = project.get("customStatusId")
+                        if status_id:
+                            output.append(f"  - Status ID: `{status_id}`")
+                    child_ids = f.get("childIds", [])
+                    if child_ids:
+                        output.append(f"  - Children: {len(child_ids)}")
                     output.append("")
 
                 return [TextContent(type="text", text="\n".join(output))]

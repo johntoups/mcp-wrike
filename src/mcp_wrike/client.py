@@ -312,16 +312,23 @@ class WrikeClient:
             return items[0].get("url")
         return None
 
-    async def get_folders(self, space_id: str | None = None) -> list[dict]:
+    async def get_folders(
+        self,
+        space_id: str | None = None,
+        parent_folder_id: str | None = None,
+    ) -> list[dict]:
         """Get folders/projects.
 
         Args:
             space_id: Optional space ID to filter by
+            parent_folder_id: Optional parent folder ID to list children of
 
         Returns:
             List of folder metadata
         """
-        if space_id:
+        if parent_folder_id:
+            endpoint = f"/folders/{parent_folder_id}/folders"
+        elif space_id:
             endpoint = f"/spaces/{space_id}/folders"
         else:
             endpoint = "/folders"
