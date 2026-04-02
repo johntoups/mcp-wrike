@@ -467,6 +467,34 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="delete_folder",
+            description="Delete a Wrike folder permanently. The folder must be empty (no tasks or child folders) or Wrike will move contents to recycle bin.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "folder_id": {
+                        "type": "string",
+                        "description": "The Wrike folder ID to delete",
+                    },
+                },
+                "required": ["folder_id"],
+            },
+        ),
+        Tool(
+            name="delete_space",
+            description="Delete a Wrike space permanently. The space should be empty (no folders or tasks). Use with extreme caution.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "space_id": {
+                        "type": "string",
+                        "description": "The Wrike space ID to delete",
+                    },
+                },
+                "required": ["space_id"],
+            },
+        ),
+        Tool(
             name="create_folder",
             description="Create a new Wrike folder inside a parent folder",
             inputSchema={
@@ -981,6 +1009,24 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 return [
                     TextContent(
                         type="text", text=f"Task `{task_id}` deleted successfully."
+                    )
+                ]
+
+            elif name == "delete_folder":
+                folder_id = arguments["folder_id"]
+                await client.delete_folder(folder_id)
+                return [
+                    TextContent(
+                        type="text", text=f"Folder `{folder_id}` deleted successfully."
+                    )
+                ]
+
+            elif name == "delete_space":
+                space_id = arguments["space_id"]
+                await client.delete_space(space_id)
+                return [
+                    TextContent(
+                        type="text", text=f"Space `{space_id}` deleted successfully."
                     )
                 ]
 

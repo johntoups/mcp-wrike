@@ -565,6 +565,28 @@ class WrikeClient:
         """
         await self._request("DELETE", f"/tasks/{task_id}")
 
+    async def delete_folder(self, folder_id: str) -> None:
+        """Delete a folder.
+
+        Args:
+            folder_id: Wrike folder ID
+
+        Raises:
+            ValueError: If the API returns an error
+        """
+        await self._request("DELETE", f"/folders/{folder_id}")
+
+    async def delete_space(self, space_id: str) -> None:
+        """Delete a space.
+
+        Args:
+            space_id: Wrike space ID
+
+        Raises:
+            ValueError: If the API returns an error
+        """
+        await self._request("DELETE", f"/spaces/{space_id}")
+
     async def create_folder(
         self,
         parent_folder_id: str,
