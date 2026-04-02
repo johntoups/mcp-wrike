@@ -1221,6 +1221,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     output.append(f"- Members: {len(members)}")
                     output.append(f"- I am member: {am_member}")
 
+                    # Fetch space-scoped workflows first (needed for folder workflow resolution)
+                    space_workflows_cache = []
+                    try:
+                        space_workflows_cache = await client.get_space_workflows(space_id)
+                    except Exception:
+                        pass
+
                     # Get top-level folders in this space (direct children only)
                     try:
                         all_folders = await client.get_folders(space_id=space_id)
@@ -1242,20 +1249,28 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         total_count = len(all_folders) - 1  # exclude space root itself
                         if folders:
                             output.append(f"- **Top-level folders ({len(folders)} of {total_count} total):**")
+                            # Fetch individual folder details to get workflowId
                             for f in folders:
-                                f_title = f.get("title", "Untitled")
                                 f_id = f.get("id", "")
-                                wf_id = f.get("workflowId", "")
-                                # Resolve workflow name from account + space workflows
+                                f_title = f.get("title", "Untitled")
+                                wf_id = ""
                                 wf_name = ""
-                                for w in account_workflows:
-                                    if w["id"] == wf_id:
-                                        wf_name = w["name"]
-                                        break
+                                try:
+                                    folder_detail = await client.get_folder(f_id)
+                                    wf_id = folder_detail.get("workflowId", "")
+                                except Exception:
+                                    pass
+                                # Resolve workflow name from account + space workflows
+                                if wf_id:
+                                    all_wfs = account_workflows + space_workflows_cache
+                                    for w in all_wfs:
+                                        if w["id"] == wf_id:
+                                            wf_name = w["name"]
+                                            break
                                 project = f.get("project", {})
                                 is_project = bool(project)
                                 type_label = " (Project)" if is_project else ""
-                                wf_label = f" | workflow: {wf_name}" if wf_name else ""
+                                wf_label = f" | workflow: {wf_name} (`{wf_id}`)" if wf_name else (f" | workflowId: `{wf_id}`" if wf_id else "")
                                 child_count = len(f.get("childIds", []))
                                 children_label = f" | {child_count} children" if child_count else ""
                                 output.append(
@@ -1266,14 +1281,12 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     except Exception:
                         output.append("  - (could not list folders)")
 
-                    # Get space-scoped workflows
-                    try:
-                        space_workflows = await client.get_space_workflows(space_id)
-                        if space_workflows:
-                            output.append(f"- **Space-scoped Workflows ({len(space_workflows)}):**")
-                            for wf in space_workflows:
-                                if wf.get("hidden", False):
-                                    continue
+                    # Display space-scoped workflows (already fetched above)
+                    if space_workflows_cache:
+                        visible_space_wfs = [w for w in space_workflows_cache if not w.get("hidden", False)]
+                        if visible_space_wfs:
+                            output.append(f"- **Space-scoped Workflows ({len(visible_space_wfs)}):**")
+                            for wf in visible_space_wfs:
                                 wf_name = wf.get("name", "Untitled")
                                 wf_id = wf.get("id", "")
                                 statuses = [
@@ -1285,8 +1298,6 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                                     output.append(
                                         f"    - {s.get('name')} | {s.get('group')} | `{s.get('id')}`"
                                     )
-                    except Exception:
-                        pass  # Space may not support workflows endpoint
 
                     output.append("")
 
