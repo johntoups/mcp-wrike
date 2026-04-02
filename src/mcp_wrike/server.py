@@ -69,6 +69,20 @@ def _format_task(task, include_description: bool = True) -> str:
             f"- Parent tasks: {', '.join(f'`{sid}`' for sid in task.super_task_ids)}"
         )
 
+    if task.responsible_ids:
+        lines.append(
+            f"- Assigned: {', '.join(f'`{rid}`' for rid in task.responsible_ids)}"
+        )
+
+    if task.custom_status_id:
+        lines.append(f"- Custom status ID: `{task.custom_status_id}`")
+
+    if task.custom_fields:
+        cf_parts = []
+        for cf in task.custom_fields:
+            cf_parts.append(f"`{cf.get('id')}` = {cf.get('value', '')}")
+        lines.append(f"- Custom fields: {', '.join(cf_parts)}")
+
     if task.permalink:
         lines.append(f"- Link: {task.permalink}")
 
@@ -674,6 +688,34 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="discover_account",
+            description=(
+                "Discover Wrike account structure: authenticated user, spaces, "
+                "folders, workflows (account-level and space-scoped), custom fields, "
+                "and item types. Use this to understand the account layout and "
+                "identify which folders/workflows to use."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "include_custom_fields": {
+                        "type": "boolean",
+                        "description": "Include custom field definitions (default: false)",
+                        "default": False,
+                    },
+                    "include_item_types": {
+                        "type": "boolean",
+                        "description": "Include custom item type definitions (default: false)",
+                        "default": False,
+                    },
+                    "space_id": {
+                        "type": "string",
+                        "description": "Only discover a specific space (by ID). Without this, discovers all spaces.",
+                    },
+                },
+            },
+        ),
+        Tool(
             name="move_task",
             description=(
                 "Move a task between folders/projects by adding"
@@ -1135,6 +1177,154 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     "**Project updated successfully:**\n",
                     _format_project(project),
                 ]
+                return [TextContent(type="text", text="\n".join(output))]
+
+            elif name == "discover_account":
+                include_custom_fields = arguments.get("include_custom_fields", False)
+                include_item_types = arguments.get("include_item_types", False)
+                filter_space_id = arguments.get("space_id")
+
+                output = []
+
+                # 1. Who am I?
+                me = await client.get_me()
+                my_id = me["id"]
+                my_name = f"{me.get('firstName', '')} {me.get('lastName', '')}".strip()
+                my_email = me.get("profiles", [{}])[0].get("email", "")
+                output.append("# Wrike Account Discovery\n")
+                output.append(f"## Authenticated User")
+                output.append(f"- **{my_name}** ({my_email})")
+                output.append(f"- Contact ID: `{my_id}`")
+                output.append("")
+
+                # 2. Spaces
+                spaces = await client.get_spaces()
+                if filter_space_id:
+                    spaces = [s for s in spaces if s["id"] == filter_space_id]
+
+                output.append(f"## Spaces ({len(spaces)})\n")
+
+                # 3. Account-level workflows
+                account_workflows = await client.get_workflows()
+                visible_account_wfs = [w for w in account_workflows if not w.get("hidden", False)]
+
+                for space in spaces:
+                    space_id = space["id"]
+                    space_title = space.get("title", "Untitled")
+                    space_type = space.get("accessType", "")
+                    members = space.get("members", [])
+                    am_member = any(m.get("id") == my_id for m in members)
+
+                    output.append(f"### {space_title}")
+                    output.append(f"- ID: `{space_id}`")
+                    output.append(f"- Access: {space_type}")
+                    output.append(f"- Members: {len(members)}")
+                    output.append(f"- I am member: {am_member}")
+
+                    # Get top-level folders in this space
+                    try:
+                        folders = await client.get_folders(space_id=space_id)
+                        # Filter recycle bin
+                        folders = [
+                            f for f in folders
+                            if f.get("scope", "") not in ("RbFolder", "RbRoot")
+                        ]
+                        if folders:
+                            output.append(f"- **Folders ({len(folders)}):**")
+                            for f in folders:
+                                f_title = f.get("title", "Untitled")
+                                f_id = f.get("id", "")
+                                wf_id = f.get("workflowId", "")
+                                # Resolve workflow name
+                                wf_name = ""
+                                for w in account_workflows:
+                                    if w["id"] == wf_id:
+                                        wf_name = w["name"]
+                                        break
+                                project = f.get("project", {})
+                                is_project = bool(project)
+                                type_label = " (Project)" if is_project else ""
+                                wf_label = f" | workflow: {wf_name}" if wf_name else ""
+                                child_count = len(f.get("childIds", []))
+                                children_label = f" | {child_count} children" if child_count else ""
+                                output.append(
+                                    f"  - `{f_id}` **{f_title}**{type_label}{wf_label}{children_label}"
+                                )
+                    except Exception:
+                        output.append("  - (could not list folders)")
+
+                    # Get space-scoped workflows
+                    try:
+                        space_workflows = await client.get_space_workflows(space_id)
+                        if space_workflows:
+                            output.append(f"- **Space-scoped Workflows ({len(space_workflows)}):**")
+                            for wf in space_workflows:
+                                if wf.get("hidden", False):
+                                    continue
+                                wf_name = wf.get("name", "Untitled")
+                                wf_id = wf.get("id", "")
+                                statuses = [
+                                    s for s in wf.get("customStatuses", [])
+                                    if not s.get("hidden", False)
+                                ]
+                                output.append(f"  - **{wf_name}** (`{wf_id}`) — {len(statuses)} statuses")
+                                for s in statuses:
+                                    output.append(
+                                        f"    - {s.get('name')} | {s.get('group')} | `{s.get('id')}`"
+                                    )
+                    except Exception:
+                        pass  # Space may not support workflows endpoint
+
+                    output.append("")
+
+                # 4. Account-level workflows
+                output.append(f"## Account-Level Workflows ({len(visible_account_wfs)})\n")
+                for wf in visible_account_wfs:
+                    wf_name = wf.get("name", "Untitled")
+                    wf_id = wf.get("id", "")
+                    is_standard = wf.get("standard", False)
+                    std_label = " (standard)" if is_standard else ""
+                    statuses = [
+                        s for s in wf.get("customStatuses", [])
+                        if not s.get("hidden", False)
+                    ]
+                    output.append(f"### {wf_name}{std_label} (`{wf_id}`)")
+                    for s in statuses:
+                        output.append(
+                            f"- {s.get('name')} | {s.get('group')} | `{s.get('id')}`"
+                        )
+                    output.append("")
+
+                # 5. Custom fields (optional)
+                if include_custom_fields:
+                    fields = await client.get_custom_fields()
+                    output.append(f"## Custom Fields ({len(fields)})\n")
+                    for f in fields:
+                        title = f.get("title", "Untitled")
+                        field_type = f.get("type", "Unknown")
+                        settings = f.get("settings", {})
+                        values = settings.get("values", [])
+                        line = f"- **{title}** | {field_type} | `{f.get('id')}`"
+                        if values:
+                            line += f" | values: {', '.join(str(v) for v in values[:10])}"
+                            if len(values) > 10:
+                                line += f" (+{len(values)-10} more)"
+                        output.append(line)
+                    output.append("")
+
+                # 6. Custom item types (optional)
+                if include_item_types:
+                    item_types = await client.get_custom_item_types()
+                    output.append(f"## Custom Item Types ({len(item_types)})\n")
+                    for it in item_types:
+                        title = it.get("title", "Untitled")
+                        related = it.get("relatedType", "Unknown")
+                        space = it.get("spaceId", "")
+                        output.append(
+                            f"- **{title}** | {related} | `{it.get('id')}` | space: `{space}`"
+                        )
+                    output.append("")
+
                 return [TextContent(type="text", text="\n".join(output))]
 
             elif name == "move_task":

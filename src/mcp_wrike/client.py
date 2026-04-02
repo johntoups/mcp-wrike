@@ -195,9 +195,23 @@ class WrikeClient:
         return tasks
 
     async def _ensure_status_cache(self) -> None:
-        """Load workflow statuses into cache if not already loaded."""
+        """Load workflow statuses into cache if not already loaded.
+
+        Loads account-level workflows first, then space-scoped workflows
+        for all accessible spaces.
+        """
         if not self._status_cache:
             await self.get_workflows()
+            # Also load space-scoped workflows
+            try:
+                spaces = await self.get_spaces()
+                for space in spaces:
+                    try:
+                        await self.get_space_workflows(space["id"])
+                    except Exception:
+                        pass  # Some spaces may not support workflows
+            except Exception:
+                pass  # Spaces endpoint may fail, account workflows are sufficient
 
     def _parse_task(self, t: dict) -> WrikeTask:
         """Parse task from API response."""
@@ -354,6 +368,61 @@ class WrikeClient:
         """
         data = await self._request("GET", "/contacts")
         return data.get("data", [])
+
+    async def get_me(self) -> dict:
+        """Get the authenticated user's contact info.
+
+        Returns:
+            Contact dict for the current user
+        """
+        data = await self._request("GET", "/contacts", params={"me": "true"})
+        contacts = data.get("data", [])
+        if not contacts:
+            raise ValueError("Could not identify authenticated user")
+        return contacts[0]
+
+    async def get_spaces(self) -> list[dict]:
+        """Get all spaces the user has access to.
+
+        Returns:
+            List of space dicts with id, title, members, etc.
+        """
+        data = await self._request("GET", "/spaces")
+        return data.get("data", [])
+
+    async def get_space_workflows(self, space_id: str) -> list[dict]:
+        """Get workflows scoped to a specific space.
+
+        Args:
+            space_id: Wrike space ID
+
+        Returns:
+            List of workflow dicts (space-scoped only, not account-level)
+        """
+        data = await self._request("GET", f"/spaces/{space_id}/workflows")
+        workflows = data.get("data", [])
+
+        # Populate status cache from space workflows too
+        for wf in workflows:
+            for status in wf.get("customStatuses", []):
+                self._status_cache[status["id"]] = status.get("name", "Unknown")
+
+        return workflows
+
+    async def get_folder(self, folder_id: str) -> dict:
+        """Get a single folder's metadata.
+
+        Args:
+            folder_id: Wrike folder ID
+
+        Returns:
+            Folder metadata dict
+        """
+        data = await self._request("GET", f"/folders/{folder_id}")
+        folders = data.get("data", [])
+        if not folders:
+            raise ValueError(f"Folder not found: {folder_id}")
+        return folders[0]
 
     async def create_task(
         self,
