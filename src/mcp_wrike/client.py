@@ -170,7 +170,10 @@ class WrikeClient:
         Returns:
             List of matching tasks
         """
-        params = {"pageSize": min(limit, 1000)}
+        params: dict[str, Any] = {
+            "pageSize": min(limit, 1000),
+            "fields": '["parentIds"]',
+        }
 
         if title:
             params["title"] = title
@@ -613,7 +616,10 @@ class WrikeClient:
         Returns:
             List of tasks in the folder
         """
-        params: dict[str, Any] = {"pageSize": min(limit, 1000)}
+        params: dict[str, Any] = {
+            "pageSize": min(limit, 1000),
+            "fields": '["parentIds"]',
+        }
         if status:
             params["status"] = status
 
