@@ -1221,21 +1221,32 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     output.append(f"- Members: {len(members)}")
                     output.append(f"- I am member: {am_member}")
 
-                    # Get top-level folders in this space
+                    # Get top-level folders in this space (direct children only)
                     try:
-                        folders = await client.get_folders(space_id=space_id)
+                        all_folders = await client.get_folders(space_id=space_id)
                         # Filter recycle bin
-                        folders = [
-                            f for f in folders
+                        all_folders = [
+                            f for f in all_folders
                             if f.get("scope", "") not in ("RbFolder", "RbRoot")
                         ]
+                        # Find space root and its direct children
+                        space_root_child_ids = set()
+                        for f in all_folders:
+                            if f.get("id") == space_id:
+                                space_root_child_ids = set(f.get("childIds", []))
+                                break
+                        folders = [
+                            f for f in all_folders
+                            if f.get("id") in space_root_child_ids
+                        ]
+                        total_count = len(all_folders) - 1  # exclude space root itself
                         if folders:
-                            output.append(f"- **Folders ({len(folders)}):**")
+                            output.append(f"- **Top-level folders ({len(folders)} of {total_count} total):**")
                             for f in folders:
                                 f_title = f.get("title", "Untitled")
                                 f_id = f.get("id", "")
                                 wf_id = f.get("workflowId", "")
-                                # Resolve workflow name
+                                # Resolve workflow name from account + space workflows
                                 wf_name = ""
                                 for w in account_workflows:
                                     if w["id"] == wf_id:
@@ -1250,6 +1261,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                                 output.append(
                                     f"  - `{f_id}` **{f_title}**{type_label}{wf_label}{children_label}"
                                 )
+                        else:
+                            output.append(f"- Folders: {total_count} total (none at top level)")
                     except Exception:
                         output.append("  - (could not list folders)")
 
