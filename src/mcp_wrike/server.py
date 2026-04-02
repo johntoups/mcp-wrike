@@ -1250,9 +1250,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
                 output.append(f"## Spaces ({len(spaces)})\n")
 
-                # 3. Account-level workflows
+                # 3. Account-level workflows (fetch all, filter later to only referenced ones)
                 account_workflows = await client.get_workflows()
-                visible_account_wfs = [w for w in account_workflows if not w.get("hidden", False)]
+                referenced_wf_ids: set[str] = set()
+                space_scoped_wf_ids: set[str] = set()
 
                 for space in spaces:
                     space_id = space["id"]
@@ -1271,6 +1272,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     space_workflows_cache = []
                     try:
                         space_workflows_cache = await client.get_space_workflows(space_id)
+                        for wf in space_workflows_cache:
+                            space_scoped_wf_ids.add(wf["id"])
                     except Exception:
                         pass
 
@@ -1308,6 +1311,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                                     pass
                                 # Resolve workflow name from account + space workflows
                                 if wf_id:
+                                    referenced_wf_ids.add(wf_id)
                                     all_wfs = account_workflows + space_workflows_cache
                                     for w in all_wfs:
                                         if w["id"] == wf_id:
@@ -1347,9 +1351,15 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
                     output.append("")
 
-                # 4. Account-level workflows
-                output.append(f"## Account-Level Workflows ({len(visible_account_wfs)})\n")
-                for wf in visible_account_wfs:
+                # 4. Account-level workflows — only those referenced by folders
+                used_account_wfs = [
+                    w for w in account_workflows
+                    if not w.get("hidden", False)
+                    and w["id"] in referenced_wf_ids
+                    and w["id"] not in space_scoped_wf_ids
+                ]
+                output.append(f"## Account-Level Workflows (showing {len(used_account_wfs)} used by your folders)\n")
+                for wf in used_account_wfs:
                     wf_name = wf.get("name", "Untitled")
                     wf_id = wf.get("id", "")
                     is_standard = wf.get("standard", False)
