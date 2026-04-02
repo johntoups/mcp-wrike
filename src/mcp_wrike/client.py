@@ -172,7 +172,7 @@ class WrikeClient:
         """
         params: dict[str, Any] = {
             "pageSize": min(limit, 1000),
-            "fields": '["parentIds"]',
+            "fields": '["parentIds","responsibleIds","customFields","superTaskIds","description","briefDescription","subTaskIds","hasAttachments"]',
         }
 
         if title:
@@ -618,7 +618,7 @@ class WrikeClient:
         """
         params: dict[str, Any] = {
             "pageSize": min(limit, 1000),
-            "fields": '["parentIds"]',
+            "fields": '["parentIds","responsibleIds","customFields","superTaskIds","description","briefDescription","subTaskIds","hasAttachments"]',
         }
         if status:
             params["status"] = status
