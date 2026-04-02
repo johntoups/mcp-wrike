@@ -255,7 +255,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="list_folders",
-            description="List Wrike folders/projects. Use parent_folder_id to list children of a specific folder (e.g., projects under ACv2 Pipeline).",
+            description="List Wrike folders/projects. Use parent_folder_id to list children of a specific folder (e.g., projects under ACv2 Pipeline). Deleted/recycled folders are hidden by default — use include_deleted=true to see them.",
             inputSchema={
                 "type": "object",
                 "properties": {
