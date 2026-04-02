@@ -183,12 +183,18 @@ class WrikeClient:
             endpoint = "/tasks"
 
         data = await self._request("GET", endpoint, params=params)
+        await self._ensure_status_cache()
 
         tasks = []
         for t in data.get("data", []):
             tasks.append(self._parse_task(t))
 
         return tasks
+
+    async def _ensure_status_cache(self) -> None:
+        """Load workflow statuses into cache if not already loaded."""
+        if not self._status_cache:
+            await self.get_workflows()
 
     def _parse_task(self, t: dict) -> WrikeTask:
         """Parse task from API response."""
@@ -231,6 +237,7 @@ class WrikeClient:
         """
         # Request additional fields via query param
         data = await self._request("GET", f"/tasks/{task_id}")
+        await self._ensure_status_cache()
 
         tasks = data.get("data", [])
         if not tasks:
@@ -396,6 +403,7 @@ class WrikeClient:
         data = await self._request(
             "POST", f"/folders/{folder_id}/tasks", json_data=body
         )
+        await self._ensure_status_cache()
         tasks = data.get("data", [])
         if not tasks:
             raise ValueError("Task creation returned no data")
@@ -468,6 +476,7 @@ class WrikeClient:
             body["customItemTypeId"] = custom_item_type_id
 
         data = await self._request("PUT", f"/tasks/{task_id}", json_data=body)
+        await self._ensure_status_cache()
         tasks = data.get("data", [])
         if not tasks:
             raise ValueError(f"Task update returned no data for task: {task_id}")
@@ -609,6 +618,7 @@ class WrikeClient:
             params["status"] = status
 
         data = await self._request("GET", f"/folders/{folder_id}/tasks", params=params)
+        await self._ensure_status_cache()
         return [self._parse_task(t) for t in data.get("data", [])]
 
     async def create_project(
@@ -652,6 +662,7 @@ class WrikeClient:
         data = await self._request(
             "POST", f"/folders/{parent_folder_id}/folders", json_data=body
         )
+        await self._ensure_status_cache()
         folders = data.get("data", [])
         if not folders:
             raise ValueError("Project creation returned no data")
@@ -689,6 +700,7 @@ class WrikeClient:
             body["customFields"] = custom_fields
 
         data = await self._request("PUT", f"/folders/{project_id}", json_data=body)
+        await self._ensure_status_cache()
         folders = data.get("data", [])
         if not folders:
             raise ValueError(f"Project update returned no data for: {project_id}")
@@ -717,6 +729,7 @@ class WrikeClient:
             body["removeParents"] = remove_parents
 
         data = await self._request("PUT", f"/tasks/{task_id}", json_data=body)
+        await self._ensure_status_cache()
         tasks = data.get("data", [])
         if not tasks:
             raise ValueError(f"Task move returned no data for: {task_id}")
