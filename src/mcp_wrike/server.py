@@ -59,6 +59,11 @@ def _format_task(task, include_description: bool = True) -> str:
     if task.completed_date:
         lines.append(f"- Completed: {task.completed_date.strftime('%Y-%m-%d %H:%M')}")
 
+    if task.parent_ids:
+        lines.append(
+            f"- Parent folders: {', '.join(f'`{pid}`' for pid in task.parent_ids)}"
+        )
+
     if task.super_task_ids:
         lines.append(
             f"- Parent tasks: {', '.join(f'`{sid}`' for sid in task.super_task_ids)}"
