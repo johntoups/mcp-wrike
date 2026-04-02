@@ -263,6 +263,11 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Parent folder ID to list children of. Without this, lists top-level folders.",
                     },
+                    "include_deleted": {
+                        "type": "boolean",
+                        "description": "Include recycle bin folders (default: false)",
+                        "default": False,
+                    },
                     "limit": {
                         "type": "integer",
                         "description": "Maximum folders to return (default: 50)",
@@ -824,7 +829,15 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             elif name == "list_folders":
                 limit = arguments.get("limit", 50)
                 parent_folder_id = arguments.get("parent_folder_id")
+                include_deleted = arguments.get("include_deleted", False)
                 folders = await client.get_folders(parent_folder_id=parent_folder_id)
+
+                # Filter out recycle bin items by default
+                if not include_deleted:
+                    folders = [
+                        f for f in folders
+                        if f.get("scope", "") not in ("RbFolder", "RbRoot")
+                    ]
 
                 if not folders:
                     ctx = f" under `{parent_folder_id}`" if parent_folder_id else ""
