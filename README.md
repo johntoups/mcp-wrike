@@ -17,7 +17,7 @@ MCP (Model Context Protocol) server for Wrike project management. Full CRUD supp
 - **get_custom_fields** — List all custom field definitions
 - **get_custom_item_types** — List all custom item type definitions
 - **list_folders** — Browse Wrike folders/projects
-- **get_folder_tasks** — List tasks within a folder
+- **get_folder_tasks** — List tasks within a folder (supports `recursive=true` to include child folder/project tasks)
 
 ### Write
 - **create_task** — Create tasks with title, description, status, assignees, dates, importance, custom fields, and custom item types

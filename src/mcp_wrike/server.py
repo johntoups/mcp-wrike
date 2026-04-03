@@ -518,7 +518,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="get_folder_tasks",
-            description="Get all tasks within a specific Wrike folder",
+            description="Get tasks within a Wrike folder. By default only returns tasks directly in the folder. Use recursive=true to also include tasks from all child folders/projects (discovered dynamically).",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -531,9 +531,14 @@ async def list_tools() -> list[Tool]:
                         "description": "Filter by status",
                         "enum": ["Active", "Completed", "Deferred", "Cancelled"],
                     },
+                    "recursive": {
+                        "type": "boolean",
+                        "description": "Include tasks from child folders/projects (default: false). Dynamically discovers all child folders.",
+                        "default": False,
+                    },
                     "limit": {
                         "type": "integer",
-                        "description": "Maximum results (default: 50)",
+                        "description": "Maximum results per folder (default: 50)",
                         "default": 50,
                     },
                 },
@@ -1057,29 +1062,73 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             elif name == "get_folder_tasks":
                 folder_id = arguments["folder_id"]
                 status = arguments.get("status")
+                recursive = arguments.get("recursive", False)
                 limit = arguments.get("limit", 50)
 
-                tasks = await client.get_folder_tasks(
-                    folder_id=folder_id,
-                    status=status,
-                    limit=limit,
-                )
+                all_tasks: list[WrikeTask] = []
+                folder_labels: dict[str, str] = {}  # task_id -> folder info
 
-                if not tasks:
+                if recursive:
+                    # Discover child folders dynamically
+                    child_folders = await client.get_folders(parent_folder_id=folder_id)
+                    # Filter out recycle bin
+                    child_folders = [
+                        f for f in child_folders
+                        if f.get("scope", "") not in ("RbFolder", "RbRoot")
+                    ]
+
+                    # Query parent folder + all children in parallel
+                    folder_ids = [folder_id] + [f["id"] for f in child_folders]
+                    folder_names = {folder_id: "(root)"}
+                    for f in child_folders:
+                        folder_names[f["id"]] = f.get("title", f["id"])
+
+                    coros = [
+                        client.get_folder_tasks(fid, status=status, limit=limit)
+                        for fid in folder_ids
+                    ]
+                    results = await asyncio.gather(*coros, return_exceptions=True)
+
+                    seen_ids: set[str] = set()
+                    for fid, result in zip(folder_ids, results):
+                        if isinstance(result, Exception):
+                            continue
+                        for task in result:
+                            if task.id not in seen_ids:
+                                seen_ids.add(task.id)
+                                all_tasks.append(task)
+                                folder_labels[task.id] = folder_names.get(fid, fid)
+                else:
+                    all_tasks = await client.get_folder_tasks(
+                        folder_id=folder_id,
+                        status=status,
+                        limit=limit,
+                    )
+
+                if not all_tasks:
                     filter_desc = f" with status='{status}'" if status else ""
+                    recursive_desc = " (recursive)" if recursive else ""
                     return [
                         TextContent(
                             type="text",
                             text=(
                                 f"No tasks found in folder"
-                                f" `{folder_id}`{filter_desc}."
+                                f" `{folder_id}`{recursive_desc}{filter_desc}."
                             ),
                         )
                     ]
 
-                output = [f"Found {len(tasks)} tasks in folder `{folder_id}`:\n"]
-                for task in tasks:
-                    output.append(_format_task(task, include_description=False))
+                recursive_note = ""
+                if recursive:
+                    child_count = len([f for f in child_folders if f.get("scope", "") not in ("RbFolder", "RbRoot")])
+                    recursive_note = f" (searched {child_count} child folders)"
+
+                output = [f"Found {len(all_tasks)} tasks in folder `{folder_id}`{recursive_note}:\n"]
+                for task in all_tasks:
+                    task_output = _format_task(task, include_description=False)
+                    if task.id in folder_labels:
+                        task_output += f"\n- Folder: {folder_labels[task.id]}"
+                    output.append(task_output)
                     output.append("")
 
                 return [TextContent(type="text", text="\n".join(output))]
