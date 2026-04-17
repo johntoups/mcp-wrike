@@ -424,6 +424,24 @@ class WrikeClient:
             raise ValueError(f"Folder not found: {folder_id}")
         return folders[0]
 
+    async def get_project(self, project_id: str) -> WrikeProject:
+        """Get a project by ID.
+
+        Args:
+            project_id: Wrike project (folder) ID
+
+        Returns:
+            Project details
+
+        Raises:
+            ValueError: If project not found or folder is not a project
+        """
+        await self._ensure_status_cache()
+        folder = await self.get_folder(project_id)
+        if not folder.get("project"):
+            raise ValueError(f"Folder {project_id} is not a project")
+        return self._parse_project(folder)
+
     async def create_task(
         self,
         folder_id: str,

@@ -721,6 +721,20 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="get_project",
+            description="Get detailed information about a Wrike project including its description",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_id": {
+                        "type": "string",
+                        "description": "The Wrike project (folder) ID",
+                    },
+                },
+                "required": ["project_id"],
+            },
+        ),
+        Tool(
             name="discover_account",
             description=(
                 "Discover Wrike account structure: authenticated user, spaces, "
@@ -1273,6 +1287,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     _format_project(project),
                 ]
                 return [TextContent(type="text", text="\n".join(output))]
+
+            elif name == "get_project":
+                project_id = arguments["project_id"]
+                project = await client.get_project(project_id)
+                return [TextContent(type="text", text=_format_project(project))]
 
             elif name == "discover_account":
                 include_custom_fields = arguments.get("include_custom_fields", False)
