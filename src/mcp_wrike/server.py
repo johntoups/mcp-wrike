@@ -174,7 +174,10 @@ async def list_tools() -> list[Tool]:
     return [
         Tool(
             name="search_tasks",
-            description="Search for Wrike tasks by title or status",
+            description=(
+                "Search for Wrike tasks by title, status, folder,"
+                " or date range. Supports pagination."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -189,6 +192,36 @@ async def list_tools() -> list[Tool]:
                             " Deferred, Cancelled"
                         ),
                         "enum": ["Active", "Completed", "Deferred", "Cancelled"],
+                    },
+                    "folder_id": {
+                        "type": "string",
+                        "description": "Scope search to a specific folder",
+                    },
+                    "created_start": {
+                        "type": "string",
+                        "description": "Tasks created on or after (YYYY-MM-DD)",
+                    },
+                    "created_end": {
+                        "type": "string",
+                        "description": "Tasks created on or before (YYYY-MM-DD)",
+                    },
+                    "updated_start": {
+                        "type": "string",
+                        "description": "Tasks updated on or after (YYYY-MM-DD)",
+                    },
+                    "updated_end": {
+                        "type": "string",
+                        "description": "Tasks updated on or before (YYYY-MM-DD)",
+                    },
+                    "sort_field": {
+                        "type": "string",
+                        "description": "Sort by field (CreatedDate, UpdatedDate)",
+                        "enum": ["CreatedDate", "UpdatedDate"],
+                    },
+                    "sort_order": {
+                        "type": "string",
+                        "description": "Sort direction",
+                        "enum": ["Asc", "Desc"],
                     },
                     "limit": {
                         "type": "integer",
@@ -518,7 +551,11 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="get_folder_tasks",
-            description="Get tasks within a Wrike folder. By default only returns tasks directly in the folder. Use recursive=true to also include tasks from all child folders/projects (discovered dynamically).",
+            description=(
+                "Get tasks within a Wrike folder with pagination and"
+                " date filtering. Use recursive=true to include tasks"
+                " from child folders."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -533,8 +570,34 @@ async def list_tools() -> list[Tool]:
                     },
                     "recursive": {
                         "type": "boolean",
-                        "description": "Include tasks from child folders/projects (default: false). Dynamically discovers all child folders.",
+                        "description": "Include tasks from child folders (default: false)",
                         "default": False,
+                    },
+                    "created_start": {
+                        "type": "string",
+                        "description": "Tasks created on or after (YYYY-MM-DD)",
+                    },
+                    "created_end": {
+                        "type": "string",
+                        "description": "Tasks created on or before (YYYY-MM-DD)",
+                    },
+                    "updated_start": {
+                        "type": "string",
+                        "description": "Tasks updated on or after (YYYY-MM-DD)",
+                    },
+                    "updated_end": {
+                        "type": "string",
+                        "description": "Tasks updated on or before (YYYY-MM-DD)",
+                    },
+                    "sort_field": {
+                        "type": "string",
+                        "description": "Sort by field",
+                        "enum": ["CreatedDate", "UpdatedDate"],
+                    },
+                    "sort_order": {
+                        "type": "string",
+                        "description": "Sort direction",
+                        "enum": ["Asc", "Desc"],
                     },
                     "limit": {
                         "type": "integer",
@@ -763,6 +826,92 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="create_comment",
+            description="Add a comment to a Wrike task (HTML allowed)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "The Wrike task ID",
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "Comment text (HTML allowed)",
+                    },
+                },
+                "required": ["task_id", "text"],
+            },
+        ),
+        Tool(
+            name="create_timelog",
+            description="Log time against a Wrike task",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "The Wrike task ID",
+                    },
+                    "hours": {
+                        "type": "number",
+                        "description": "Hours to log (e.g. 1.5)",
+                    },
+                    "tracked_date": {
+                        "type": "string",
+                        "description": "Date the work was done (YYYY-MM-DD)",
+                    },
+                    "comment": {
+                        "type": "string",
+                        "description": "Optional description of work done",
+                    },
+                    "category_id": {
+                        "type": "string",
+                        "description": "Timelog category ID (e.g. Development, Research)",
+                    },
+                },
+                "required": ["task_id", "hours", "tracked_date"],
+            },
+        ),
+        Tool(
+            name="get_task_timelogs",
+            description="Get time entries logged against a Wrike task",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "The Wrike task ID",
+                    },
+                },
+                "required": ["task_id"],
+            },
+        ),
+        Tool(
+            name="get_timelog_report",
+            description=(
+                "Get a time report — all timelog entries optionally"
+                " filtered by folder and date range"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "folder_id": {
+                        "type": "string",
+                        "description": "Folder ID to scope timelogs to",
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "description": "Start of date range (YYYY-MM-DD)",
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "End of date range (YYYY-MM-DD)",
+                    },
+                },
+            },
+        ),
+        Tool(
             name="move_task",
             description=(
                 "Move a task between folders/projects by adding"
@@ -817,7 +966,16 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 limit = arguments.get("limit", 50)
 
                 tasks = await client.search_tasks(
-                    title=title, status=status, limit=limit
+                    title=title,
+                    status=status,
+                    folder_id=arguments.get("folder_id"),
+                    limit=limit,
+                    created_start=arguments.get("created_start"),
+                    created_end=arguments.get("created_end"),
+                    updated_start=arguments.get("updated_start"),
+                    updated_end=arguments.get("updated_end"),
+                    sort_field=arguments.get("sort_field"),
+                    sort_order=arguments.get("sort_order"),
                 )
 
                 if not tasks:
@@ -1078,6 +1236,14 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 status = arguments.get("status")
                 recursive = arguments.get("recursive", False)
                 limit = arguments.get("limit", 50)
+                date_kwargs = {
+                    "created_start": arguments.get("created_start"),
+                    "created_end": arguments.get("created_end"),
+                    "updated_start": arguments.get("updated_start"),
+                    "updated_end": arguments.get("updated_end"),
+                    "sort_field": arguments.get("sort_field"),
+                    "sort_order": arguments.get("sort_order"),
+                }
 
                 all_tasks: list[WrikeTask] = []
                 folder_labels: dict[str, str] = {}  # task_id -> folder info
@@ -1098,7 +1264,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         folder_names[f["id"]] = f.get("title", f["id"])
 
                     coros = [
-                        client.get_folder_tasks(fid, status=status, limit=limit)
+                        client.get_folder_tasks(
+                            fid, status=status, limit=limit, **date_kwargs
+                        )
                         for fid in folder_ids
                     ]
                     results = await asyncio.gather(*coros, return_exceptions=True)
@@ -1117,6 +1285,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         folder_id=folder_id,
                         status=status,
                         limit=limit,
+                        **date_kwargs,
                     )
 
                 if not all_tasks:
@@ -1472,6 +1641,123 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                             f"- **{title}** | {related} | `{it.get('id')}` | space: `{space}`"
                         )
                     output.append("")
+
+                return [TextContent(type="text", text="\n".join(output))]
+
+            elif name == "create_comment":
+                task_id = arguments["task_id"]
+                text = arguments["text"]
+
+                comment = await client.create_comment(task_id=task_id, text=text)
+                author_name = await _get_user_name(client, comment.author_id)
+
+                return [
+                    TextContent(
+                        type="text",
+                        text=(
+                            f"**Comment added to task `{task_id}`:**\n\n"
+                            f"{_format_comment(comment, author_name)}"
+                        ),
+                    )
+                ]
+
+            elif name == "create_timelog":
+                task_id = arguments["task_id"]
+                hours = arguments["hours"]
+                tracked_date = arguments["tracked_date"]
+
+                timelog = await client.create_timelog(
+                    task_id=task_id,
+                    hours=hours,
+                    tracked_date=tracked_date,
+                    comment=arguments.get("comment"),
+                    category_id=arguments.get("category_id"),
+                )
+
+                return [
+                    TextContent(
+                        type="text",
+                        text=(
+                            f"**Time logged to task `{task_id}`:**\n"
+                            f"- Hours: {timelog.hours}\n"
+                            f"- Date: {timelog.tracked_date}\n"
+                            f"- Comment: {timelog.comment or '(none)'}\n"
+                            f"- ID: `{timelog.id}`"
+                        ),
+                    )
+                ]
+
+            elif name == "get_task_timelogs":
+                task_id = arguments["task_id"]
+                timelogs = await client.get_task_timelogs(task_id)
+
+                if not timelogs:
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"No time entries for task `{task_id}`.",
+                        )
+                    ]
+
+                total_hours = sum(t.hours for t in timelogs)
+                output = [f"**{len(timelogs)} time entries ({total_hours:.1f}h total):**\n"]
+                for t in timelogs:
+                    user_name = await _get_user_name(client, t.user_id)
+                    comment_str = f" — {t.comment}" if t.comment else ""
+                    output.append(
+                        f"- {t.tracked_date} | {t.hours}h | {user_name}{comment_str}"
+                    )
+
+                return [TextContent(type="text", text="\n".join(output))]
+
+            elif name == "get_timelog_report":
+                folder_id = arguments.get("folder_id")
+                start_date = arguments.get("start_date")
+                end_date = arguments.get("end_date")
+
+                timelogs = await client.get_timelogs(
+                    folder_id=folder_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+
+                if not timelogs:
+                    scope = f" in folder `{folder_id}`" if folder_id else ""
+                    date_range = ""
+                    if start_date and end_date:
+                        date_range = f" from {start_date} to {end_date}"
+                    elif start_date:
+                        date_range = f" from {start_date}"
+                    elif end_date:
+                        date_range = f" through {end_date}"
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"No time entries found{scope}{date_range}.",
+                        )
+                    ]
+
+                # Aggregate by user
+                by_user: dict[str, float] = {}
+                by_task: dict[str, float] = {}
+                total_hours = 0.0
+                for t in timelogs:
+                    by_user[t.user_id] = by_user.get(t.user_id, 0.0) + t.hours
+                    by_task[t.task_id] = by_task.get(t.task_id, 0.0) + t.hours
+                    total_hours += t.hours
+
+                output = [f"**Time Report: {total_hours:.1f}h across {len(timelogs)} entries**\n"]
+
+                output.append("**By person:**")
+                for user_id, hours in sorted(by_user.items(), key=lambda x: -x[1]):
+                    user_name = await _get_user_name(client, user_id)
+                    output.append(f"- {user_name}: {hours:.1f}h")
+
+                output.append(f"\n**By task ({len(by_task)} tasks):**")
+                for task_id, hours in sorted(by_task.items(), key=lambda x: -x[1])[:20]:
+                    output.append(f"- `{task_id}`: {hours:.1f}h")
+                if len(by_task) > 20:
+                    output.append(f"  ... and {len(by_task) - 20} more tasks")
 
                 return [TextContent(type="text", text="\n".join(output))]
 

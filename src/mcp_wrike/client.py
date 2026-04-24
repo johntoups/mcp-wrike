@@ -60,6 +60,21 @@ class WrikeAttachment:
 
 
 @dataclass
+class WrikeTimelog:
+    """Wrike timelog entry."""
+
+    id: str
+    task_id: str
+    user_id: str
+    hours: float
+    tracked_date: str
+    comment: str | None = None
+    category_id: str | None = None
+    created_date: datetime | None = None
+    updated_date: datetime | None = None
+
+
+@dataclass
 class WrikeProject:
     """Wrike project data (a folder with project properties)."""
 
@@ -158,6 +173,12 @@ class WrikeClient:
         status: str | None = None,
         folder_id: str | None = None,
         limit: int = 100,
+        created_start: str | None = None,
+        created_end: str | None = None,
+        updated_start: str | None = None,
+        updated_end: str | None = None,
+        sort_field: str | None = None,
+        sort_order: str | None = None,
     ) -> list[WrikeTask]:
         """Search for tasks.
 
@@ -165,13 +186,22 @@ class WrikeClient:
             title: Search by title (partial match)
             status: Filter by status (Active, Completed, Deferred, Cancelled)
             folder_id: Filter by folder/project ID
-            limit: Maximum results (API max is 1000)
+            limit: Maximum results (will paginate if needed)
+            created_start: Filter tasks created on or after (YYYY-MM-DD)
+            created_end: Filter tasks created on or before (YYYY-MM-DD)
+            updated_start: Filter tasks updated on or after (YYYY-MM-DD)
+            updated_end: Filter tasks updated on or before (YYYY-MM-DD)
+            sort_field: Sort by field (CreatedDate, UpdatedDate, etc.)
+            sort_order: Sort direction (Asc, Desc)
 
         Returns:
             List of matching tasks
         """
+        import json as json_mod
+
+        page_size = min(limit, 1000)
         params: dict[str, Any] = {
-            "pageSize": min(limit, 1000),
+            "pageSize": page_size,
             "fields": '["parentIds","responsibleIds","customFields","superTaskIds","description","briefDescription","subTaskIds","hasAttachments"]',
         }
 
@@ -179,20 +209,43 @@ class WrikeClient:
             params["title"] = title
         if status:
             params["status"] = status
+        if created_start or created_end:
+            date_filter: dict[str, str] = {}
+            if created_start:
+                date_filter["start"] = f"{created_start}T00:00:00Z"
+            if created_end:
+                date_filter["end"] = f"{created_end}T23:59:59Z"
+            params["createdDate"] = json_mod.dumps(date_filter)
+        if updated_start or updated_end:
+            date_filter2: dict[str, str] = {}
+            if updated_start:
+                date_filter2["start"] = f"{updated_start}T00:00:00Z"
+            if updated_end:
+                date_filter2["end"] = f"{updated_end}T23:59:59Z"
+            params["updatedDate"] = json_mod.dumps(date_filter2)
+        if sort_field:
+            params["sortField"] = sort_field
+        if sort_order:
+            params["sortOrder"] = sort_order
 
         if folder_id:
             endpoint = f"/folders/{folder_id}/tasks"
         else:
             endpoint = "/tasks"
 
-        data = await self._request("GET", endpoint, params=params)
+        all_tasks: list[WrikeTask] = []
         await self._ensure_status_cache()
 
-        tasks = []
-        for t in data.get("data", []):
-            tasks.append(self._parse_task(t))
+        while True:
+            data = await self._request("GET", endpoint, params=params)
+            all_tasks.extend(self._parse_task(t) for t in data.get("data", []))
 
-        return tasks
+            next_token = data.get("nextPageToken")
+            if not next_token or len(all_tasks) >= limit:
+                break
+            params["nextPageToken"] = next_token
+
+        return all_tasks[:limit]
 
     async def _ensure_status_cache(self) -> None:
         """Load workflow statuses into cache if not already loaded.
@@ -714,27 +767,72 @@ class WrikeClient:
         folder_id: str,
         status: str | None = None,
         limit: int = 100,
+        created_start: str | None = None,
+        created_end: str | None = None,
+        updated_start: str | None = None,
+        updated_end: str | None = None,
+        sort_field: str | None = None,
+        sort_order: str | None = None,
     ) -> list[WrikeTask]:
-        """Get tasks within a specific folder.
+        """Get tasks within a specific folder with pagination and date filtering.
 
         Args:
             folder_id: Wrike folder ID
             status: Optional status filter (Active, Completed, Deferred, Cancelled)
-            limit: Maximum results
+            limit: Maximum results (will paginate if needed)
+            created_start: Filter tasks created on or after (YYYY-MM-DD)
+            created_end: Filter tasks created on or before (YYYY-MM-DD)
+            updated_start: Filter tasks updated on or after (YYYY-MM-DD)
+            updated_end: Filter tasks updated on or before (YYYY-MM-DD)
+            sort_field: Sort by field (CreatedDate, UpdatedDate, etc.)
+            sort_order: Sort direction (Asc, Desc)
 
         Returns:
             List of tasks in the folder
         """
+        import json as json_mod
+
+        page_size = min(limit, 1000)
         params: dict[str, Any] = {
-            "pageSize": min(limit, 1000),
+            "pageSize": page_size,
             "fields": '["parentIds","responsibleIds","customFields","superTaskIds","description","briefDescription","subTaskIds","hasAttachments"]',
         }
         if status:
             params["status"] = status
+        if created_start or created_end:
+            date_filter: dict[str, str] = {}
+            if created_start:
+                date_filter["start"] = f"{created_start}T00:00:00Z"
+            if created_end:
+                date_filter["end"] = f"{created_end}T23:59:59Z"
+            params["createdDate"] = json_mod.dumps(date_filter)
+        if updated_start or updated_end:
+            date_filter2: dict[str, str] = {}
+            if updated_start:
+                date_filter2["start"] = f"{updated_start}T00:00:00Z"
+            if updated_end:
+                date_filter2["end"] = f"{updated_end}T23:59:59Z"
+            params["updatedDate"] = json_mod.dumps(date_filter2)
+        if sort_field:
+            params["sortField"] = sort_field
+        if sort_order:
+            params["sortOrder"] = sort_order
 
-        data = await self._request("GET", f"/folders/{folder_id}/tasks", params=params)
+        all_tasks: list[WrikeTask] = []
         await self._ensure_status_cache()
-        return [self._parse_task(t) for t in data.get("data", [])]
+
+        while True:
+            data = await self._request(
+                "GET", f"/folders/{folder_id}/tasks", params=params
+            )
+            all_tasks.extend(self._parse_task(t) for t in data.get("data", []))
+
+            next_token = data.get("nextPageToken")
+            if not next_token or len(all_tasks) >= limit:
+                break
+            params["nextPageToken"] = next_token
+
+        return all_tasks[:limit]
 
     async def create_project(
         self,
@@ -820,6 +918,142 @@ class WrikeClient:
         if not folders:
             raise ValueError(f"Project update returned no data for: {project_id}")
         return self._parse_project(folders[0])
+
+    async def create_comment(
+        self,
+        task_id: str,
+        text: str,
+    ) -> WrikeComment:
+        """Create a comment on a task.
+
+        Args:
+            task_id: Wrike task ID
+            text: Comment text (HTML allowed)
+
+        Returns:
+            Created comment
+        """
+        data = await self._request(
+            "POST", f"/tasks/{task_id}/comments", json_data={"text": text}
+        )
+        comments = data.get("data", [])
+        if not comments:
+            raise ValueError("Comment creation returned no data")
+        c = comments[0]
+        return WrikeComment(
+            id=c["id"],
+            author_id=c.get("authorId", "Unknown"),
+            text=c.get("text", ""),
+            created_date=self._parse_datetime(c.get("createdDate")),
+            task_id=task_id,
+        )
+
+    async def create_timelog(
+        self,
+        task_id: str,
+        hours: float,
+        tracked_date: str,
+        comment: str | None = None,
+        category_id: str | None = None,
+    ) -> WrikeTimelog:
+        """Log time against a task.
+
+        Args:
+            task_id: Wrike task ID
+            hours: Hours to log (float, e.g. 1.5)
+            tracked_date: Date the work was done (YYYY-MM-DD)
+            comment: Optional description of work done
+            category_id: Optional timelog category ID
+
+        Returns:
+            Created timelog entry
+        """
+        body: dict[str, Any] = {
+            "hours": hours,
+            "trackedDate": tracked_date,
+        }
+        if comment:
+            body["comment"] = comment
+        if category_id:
+            body["categoryId"] = category_id
+
+        data = await self._request(
+            "POST", f"/tasks/{task_id}/timelogs", json_data=body
+        )
+        timelogs = data.get("data", [])
+        if not timelogs:
+            raise ValueError("Timelog creation returned no data")
+        return self._parse_timelog(timelogs[0])
+
+    async def get_task_timelogs(self, task_id: str) -> list[WrikeTimelog]:
+        """Get timelog entries for a task.
+
+        Args:
+            task_id: Wrike task ID
+
+        Returns:
+            List of timelog entries
+        """
+        data = await self._request("GET", f"/tasks/{task_id}/timelogs")
+        return [self._parse_timelog(t) for t in data.get("data", [])]
+
+    async def get_timelogs(
+        self,
+        folder_id: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> list[WrikeTimelog]:
+        """Get timelog entries, optionally filtered by folder and date range.
+
+        Args:
+            folder_id: Optional folder ID to scope timelogs
+            start_date: Start of date range (YYYY-MM-DD)
+            end_date: End of date range (YYYY-MM-DD)
+
+        Returns:
+            List of timelog entries
+        """
+        import json as json_mod
+
+        params: dict[str, Any] = {}
+        if start_date or end_date:
+            date_filter: dict[str, str] = {}
+            if start_date:
+                date_filter["start"] = f"{start_date}T00:00:00Z"
+            if end_date:
+                date_filter["end"] = f"{end_date}T23:59:59Z"
+            params["trackedDate"] = json_mod.dumps(date_filter)
+
+        if folder_id:
+            endpoint = f"/folders/{folder_id}/timelogs"
+        else:
+            endpoint = "/timelogs"
+
+        data = await self._request("GET", endpoint, params=params)
+        return [self._parse_timelog(t) for t in data.get("data", [])]
+
+    async def get_timelog_categories(self) -> list[dict]:
+        """Get all timelog category definitions.
+
+        Returns:
+            List of category dicts with id, name
+        """
+        data = await self._request("GET", "/timelog_categories")
+        return data.get("data", [])
+
+    def _parse_timelog(self, t: dict) -> WrikeTimelog:
+        """Parse timelog from API response."""
+        return WrikeTimelog(
+            id=t["id"],
+            task_id=t.get("taskId", ""),
+            user_id=t.get("userId", ""),
+            hours=t.get("hours", 0.0),
+            tracked_date=t.get("trackedDate", ""),
+            comment=t.get("comment"),
+            category_id=t.get("categoryId"),
+            created_date=self._parse_datetime(t.get("createdDate")),
+            updated_date=self._parse_datetime(t.get("updatedDate")),
+        )
 
     async def move_task(
         self,
