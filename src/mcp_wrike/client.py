@@ -1019,9 +1019,9 @@ class WrikeClient:
         if start_date or end_date:
             date_filter: dict[str, str] = {}
             if start_date:
-                date_filter["start"] = f"{start_date}T00:00:00Z"
+                date_filter["start"] = start_date
             if end_date:
-                date_filter["end"] = f"{end_date}T23:59:59Z"
+                date_filter["end"] = end_date
             params["trackedDate"] = json_mod.dumps(date_filter)
 
         if folder_id:
