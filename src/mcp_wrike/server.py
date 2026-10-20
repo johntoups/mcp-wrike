@@ -848,11 +848,19 @@ async def list_tools() -> list[Tool]:
             description=(
                 "List Wrike request forms visible to this token, with each "
                 "field's ID, type, title, mandatory flag and options. Use the "
-                "field IDs with submit_request_form."
+                "field IDs with submit_request_form. The list omits some forms "
+                "the token can still read; pass form_id to fetch one directly."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
+                    "form_id": {
+                        "type": "string",
+                        "description": (
+                            "Fetch this one form: API ID (16 chars) or the "
+                            "numeric formid from the form's URL"
+                        ),
+                    },
                     "title_contains": {
                         "type": "string",
                         "description": "Only forms whose title contains this text (case-insensitive)",
@@ -873,7 +881,10 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "form_id": {
                         "type": "string",
-                        "description": "Request form ID (16 chars) from list_request_forms",
+                        "description": (
+                            "Request form: API ID (16 chars) or the numeric "
+                            "formid from the form's URL"
+                        ),
                     },
                     "fields": {
                         "type": "array",
@@ -1718,7 +1729,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
             elif name == "list_request_forms":
                 needle = (arguments.get("title_contains") or "").lower()
-                forms = await client.list_request_forms()
+                if arguments.get("form_id"):
+                    forms = [await client.get_request_form(arguments["form_id"])]
+                else:
+                    forms = await client.list_request_forms()
                 output = []
                 for f in forms:
                     if needle and needle not in (f.get("title") or "").lower():

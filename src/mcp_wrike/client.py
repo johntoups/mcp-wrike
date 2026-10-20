@@ -965,6 +965,39 @@ class WrikeClient:
         )
         return data.get("data", [])
 
+    async def get_request_form(self, form_id: str) -> dict[str, Any]:
+        """Fetch one request form, with its fields, by ID.
+
+        The list endpoint omits some forms the token can still read directly,
+        so fetch by ID rather than searching the list.
+
+        Args:
+            form_id: API form ID (16 chars), or the numeric `formid` from a
+                form URL (e.g. 2620023), which is converted first
+
+        Returns:
+            Raw RequestForm object
+        """
+        if form_id.isdigit():
+            ids = await self._request(
+                "GET",
+                "/ids",
+                params={"ids": f"[{form_id}]", "type": "ApiV2RequestForm"},
+            )
+            converted = ids.get("data") or []
+            if not converted:
+                raise ValueError(f"No request form with formid {form_id}")
+            form_id = converted[0]["id"]
+        data = await self._request(
+            "GET",
+            f"/request_forms/{form_id}",
+            params={"plainTextDescription": "true"},
+        )
+        forms = data.get("data") or []
+        if not forms:
+            raise ValueError(f"Request form {form_id} not found or not visible")
+        return forms[0]
+
     async def submit_request_form(
         self,
         form_id: str,
@@ -977,7 +1010,7 @@ class WrikeClient:
         fields only when the job runs, so a 202 does not mean success.
 
         Args:
-            form_id: Request form ID (16 chars, from list_request_forms)
+            form_id: API form ID (16 chars) or numeric `formid` from the URL
             form_fields: [{"fieldId": "...", "values": ["..."]}]
             poll_seconds: How long to wait for the job before returning it
 
@@ -987,10 +1020,8 @@ class WrikeClient:
         # Choice fields (ComboBox, CheckBox, ...) take option IDs, not option
         # text; Wrike rejects text with "Invalid form item id". Translate any
         # value that matches an option title.
-        forms = await self.list_request_forms()
-        schema = next((f for f in forms if f.get("id") == form_id), None)
-        if schema is None:
-            raise ValueError(f"Request form {form_id} is not visible to this token")
+        schema = await self.get_request_form(form_id)
+        form_id = schema["id"]
         options: dict[str, dict[str, str]] = {}
         for page in schema.get("pages", []):
             for fld in page.get("fields", []):
