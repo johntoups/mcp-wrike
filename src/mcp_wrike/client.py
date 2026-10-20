@@ -1,5 +1,7 @@
 """Wrike API client."""
 
+import asyncio
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -947,6 +949,89 @@ class WrikeClient:
             created_date=self._parse_datetime(c.get("createdDate")),
             task_id=task_id,
         )
+
+    async def list_request_forms(self) -> list[dict[str, Any]]:
+        """List the request forms visible to this token, with their fields.
+
+        Only forms in spaces the token's user can see are returned.
+
+        Returns:
+            Raw RequestForm objects: id, title, description, pages[].fields[]
+        """
+        data = await self._request(
+            "GET",
+            "/request_forms",
+            params={"pageSize": 100, "plainTextDescription": "true"},
+        )
+        return data.get("data", [])
+
+    async def submit_request_form(
+        self,
+        form_id: str,
+        form_fields: list[dict[str, Any]],
+        poll_seconds: float = 30.0,
+    ) -> dict[str, Any]:
+        """Submit a request form and wait for the async job to finish.
+
+        Wrike accepts the submission as an async job and checks mandatory
+        fields only when the job runs, so a 202 does not mean success.
+
+        Args:
+            form_id: Request form ID (16 chars, from list_request_forms)
+            form_fields: [{"fieldId": "...", "values": ["..."]}]
+            poll_seconds: How long to wait for the job before returning it
+
+        Returns:
+            The final async job object: status, errorMessage, and result IDs
+        """
+        # Choice fields (ComboBox, CheckBox, ...) take option IDs, not option
+        # text; Wrike rejects text with "Invalid form item id". Translate any
+        # value that matches an option title.
+        forms = await self.list_request_forms()
+        schema = next((f for f in forms if f.get("id") == form_id), None)
+        if schema is None:
+            raise ValueError(f"Request form {form_id} is not visible to this token")
+        options: dict[str, dict[str, str]] = {}
+        for page in schema.get("pages", []):
+            for fld in page.get("fields", []):
+                items = fld.get("items") or []
+                if items and isinstance(items[0], dict):
+                    options[fld["id"]] = {
+                        (i.get("title") or "").strip().lower(): i["id"] for i in items
+                    }
+        resolved = []
+        for f in form_fields:
+            opts = options.get(f["fieldId"])
+            values = f["values"]
+            if opts:
+                ids = set(opts.values())
+                values = [
+                    v if v in ids else opts.get(v.strip().lower(), v) for v in values
+                ]
+                bad = [v for v in values if v not in ids]
+                if bad:
+                    raise ValueError(
+                        f"Field {f['fieldId']}: {bad} not among its options: "
+                        f"{sorted(opts)}"
+                    )
+            resolved.append({"fieldId": f["fieldId"], "values": values})
+
+        data = await self._request(
+            "POST",
+            f"/request_forms/{form_id}/submit",
+            params={"formFields": json.dumps(resolved)},
+        )
+        job = (data.get("data") or [{}])[0]
+        job_id = job.get("id")
+        waited = 0.0
+        while job_id and job.get("status") in ("InQueue", "InProgress"):
+            if waited >= poll_seconds:
+                break
+            await asyncio.sleep(2)
+            waited += 2
+            data = await self._request("GET", f"/async_job/{job_id}")
+            job = (data.get("data") or [{}])[0]
+        return job
 
     async def create_timelog(
         self,

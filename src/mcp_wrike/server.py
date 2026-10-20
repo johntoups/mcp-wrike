@@ -844,6 +844,61 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="list_request_forms",
+            description=(
+                "List Wrike request forms visible to this token, with each "
+                "field's ID, type, title, mandatory flag and options. Use the "
+                "field IDs with submit_request_form."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "title_contains": {
+                        "type": "string",
+                        "description": "Only forms whose title contains this text (case-insensitive)",
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="submit_request_form",
+            description=(
+                "Submit a Wrike request form. This creates real work in Wrike; "
+                "confirm field values with the user first. Wrike runs the "
+                "submission as an async job and checks mandatory fields only "
+                "then; this tool waits for the job and reports the outcome."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "form_id": {
+                        "type": "string",
+                        "description": "Request form ID (16 chars) from list_request_forms",
+                    },
+                    "fields": {
+                        "type": "array",
+                        "description": (
+                            "One entry per field. Choice fields take the option "
+                            "text or its ID (text is translated to the ID); Date "
+                            "takes YYYY-MM-DD; User takes a contact ID."
+                        ),
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "field_id": {"type": "string"},
+                                "values": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                },
+                            },
+                            "required": ["field_id", "values"],
+                        },
+                    },
+                },
+                "required": ["form_id", "fields"],
+            },
+        ),
+        Tool(
             name="create_timelog",
             description="Log time against a Wrike task",
             inputSchema={
@@ -1660,6 +1715,61 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         ),
                     )
                 ]
+
+            elif name == "list_request_forms":
+                needle = (arguments.get("title_contains") or "").lower()
+                forms = await client.list_request_forms()
+                output = []
+                for f in forms:
+                    if needle and needle not in (f.get("title") or "").lower():
+                        continue
+                    output.append(f"## {f.get('title')} — `{f.get('id')}`")
+                    if f.get("description"):
+                        output.append(f.get("description"))
+                    for page in f.get("pages", []):
+                        for fld in page.get("fields", []):
+                            if fld.get("type") == "Separator":
+                                continue
+                            opts = [
+                                i.get("title", i) if isinstance(i, dict) else i
+                                for i in fld.get("items", []) or []
+                            ]
+                            line = (
+                                f"- **{(fld.get('title') or '').strip()}** "
+                                f"({fld.get('type')}"
+                                f"{', mandatory' if fld.get('mandatory') else ''})"
+                                f" `{fld.get('id')}`"
+                            )
+                            if opts:
+                                line += f" — options: {', '.join(map(str, opts))}"
+                            output.append(line)
+                    output.append("")
+                if not output:
+                    output = ["No request forms visible to this token."]
+                return [TextContent(type="text", text="\n".join(output))]
+
+            elif name == "submit_request_form":
+                form_fields = [
+                    {"fieldId": f["field_id"], "values": f["values"]}
+                    for f in arguments["fields"]
+                ]
+                job = await client.submit_request_form(
+                    form_id=arguments["form_id"], form_fields=form_fields
+                )
+                status = job.get("status")
+                lines = [f"**Request form job:** `{job.get('id')}` — {status}"]
+                if job.get("errorMessage"):
+                    lines.append(f"Error: {job['errorMessage']}")
+                extra = {
+                    k: v
+                    for k, v in job.items()
+                    if k not in ("id", "status", "progressPercent", "type", "errorMessage")
+                }
+                if extra:
+                    lines.append(f"Result: {extra}")
+                if status in ("InQueue", "InProgress"):
+                    lines.append("Still running; check again before assuming it succeeded.")
+                return [TextContent(type="text", text="\n".join(lines))]
 
             elif name == "create_timelog":
                 task_id = arguments["task_id"]
